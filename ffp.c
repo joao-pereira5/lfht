@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdatomic.h>
 #include <ffp.h>
+#include <mr.h>
 
 #define MAX_NODES 5
 #define HASH_SIZE 4
@@ -32,7 +33,13 @@ struct ffp_node {
 	enum ntype type;
 	union unode u;
 };
-
+/*
+struct ffp_head {
+	struct ffp_node *entry_hash;
+	struct mr_entry *array;
+	int max_threads;
+};
+*/
 void search_remove_hash(
 		struct ffp_node *hnode,
 		unsigned long long hash);
@@ -76,7 +83,62 @@ void *search_hash(
 		struct ffp_node *hnode,
 		unsigned long long hash);
 
-//auxiliary functions
+struct ffp_node *create_hash_node(
+		int size,
+		int hash_pos,
+		struct ffp_node *prev);
+
+//interface
+
+struct ffp_head init_ffp(int max_threads){
+	struct ffp_head head;
+	head.entry_hash = create_hash_node(HASH_SIZE, 0, NULL);
+	head.array = init_mr(max_threads);
+	head.max_threads = max_threads;
+	return head;
+}
+
+int ffp_init_thread(struct ffp_head head)
+{
+	return mr_thread_acquire(head.array, head.max_threads);
+}
+
+void ffp_end_thread(struct ffp_head head, int thread_id)
+{
+	return mr_thread_release(head.array, thread_id);
+}
+
+void *ffp_search(
+		struct ffp_head head,
+		unsigned long long hash,
+		int thread_id)
+{
+	return search_hash(head.entry_hash, hash);
+}
+
+struct ffp_node *ffp_insert(
+		struct ffp_head head,
+		unsigned long long hash,
+		void *value,
+		int thread_id)
+{
+	return search_insert_hash(
+			head.entry_hash,
+			hash,
+			value);
+}
+
+void ffp_remove(
+		struct ffp_head head,
+		unsigned long long hash,
+		int thread_id)
+{
+	return search_remove_hash(
+			head.entry_hash,
+			hash);
+}
+
+//auxiliary
 
 void *ffp_malloc(size_t size)
 {
@@ -116,10 +178,6 @@ struct ffp_node *create_hash_node(
 		atomic_init(&(node->u.hash.array[i]), node);
 	}
 	return node;
-}
-
-struct ffp_node *init_ffp(){
-	return create_hash_node(HASH_SIZE, 0, NULL);
 }
 
 int get_bucket(

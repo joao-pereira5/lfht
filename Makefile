@@ -4,14 +4,17 @@ LFLAGS=-pthread -lpthread -L`jemalloc-config --libdir` -Wl,-rpath,`jemalloc-conf
 
 all: bench
 
-bench: bench.o ffp.o
-	$(CC) $(CFLAGS) bench.o ffp.o $(LFLAGS) -I. -o bench
+bench: bench.o ffp.o mr.o
+	$(CC) $(CFLAGS) bench.o ffp.o mr.o $(LFLAGS) -I. -o bench
 
-bench.o: bench2.c
+bench.o: bench.c
 	$(CC) -c bench.c -I. $(CFLAGS) $(LFLAGS)
 
 ffp.o: ffp.c
 	$(CC) -c ffp.c -I. $(CFLAGS) $(LFLAGS)
+
+mr.o: mr.c
+	$(CC) -c mr.c -I. $(CFLAGS) $(LFLAGS)
 
 clean:
 	rm *.o bench

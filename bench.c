@@ -11,61 +11,67 @@ unsigned long long limit_sf,
 
 int n_threads;
 
-struct ffp_node *head;
+struct ffp_head head;
 
 void *prepare_worker(void *entry_point)
 {
+	int thread_id = ffp_init_thread(head);
 	for(int i=0; i<test_size/n_threads; i++){
 		unsigned long long value = nrand48(entry_point);
 		if(value < limit_r)
-			search_insert_hash(head, value, (void*)value);
+			ffp_insert(head, value, (void*)value, thread_id);
 	}
+	ffp_end_thread(head, thread_id);
 	return NULL;
 }
 
 void *bench_worker(void *entry_point)
 {
+	int thread_id = ffp_init_thread(head);
 	for(int i=0; i<test_size/n_threads; i++){
 		unsigned long long value = nrand48(entry_point);
 		if(value < limit_sf){
-			if((unsigned long long)search_hash(head, value)!=value)
+			if((unsigned long long)ffp_search(head, value, thread_id)!=value)
 				printf("failiure: item not match %lld\n", value);
 		}
 		else if(value < limit_r){
-			search_remove_hash(head, value);
+			ffp_remove(head, value, thread_id);
 		}
 		else if(value < limit_i){
-			search_insert_hash(head, value, (void*)value);
+			ffp_insert(head, value, (void*)value, thread_id);
 		}
 		else{
-			if(search_hash(head, value)!=NULL)
+			if(ffp_search(head, value, thread_id)!=NULL)
 				printf("failiure: found item %lld\n", value);
 		}
 	}
+	ffp_end_thread(head, thread_id);
 	return NULL;
 }
 
 void *test_worker(void *entry_point)
 {
+	int thread_id = ffp_init_thread(head);
 	for(int i=0; i<test_size/n_threads; i++){
 		unsigned long long value = nrand48(entry_point);
 		if(value < limit_sf){
-			if((unsigned long long)search_hash(head, value)!=value)
+			if((unsigned long long)ffp_search(head, value, thread_id)!=value)
 				return (void*)1;
 		}
 		else if(value < limit_r){
-			if(search_hash(head, value)!=NULL)
+			if(ffp_search(head, value, thread_id)!=NULL)
 				return (void*)1;
 		}
 		else if(value < limit_i){
-			if((unsigned long long)search_hash(head, value)!=value)
+			if((unsigned long long)ffp_search(head, value, thread_id)!=value)
 				return (void*)1;
 		}
 		else{
-			if(search_hash(head, value)!=NULL)
+			if(ffp_search(head, value, thread_id)!=NULL)
 				return (void*)1;
 		}
 	}
+	ffp_end_thread(head, thread_id);
 	return NULL;
 }
 
@@ -93,7 +99,7 @@ int main(int argc, char **argv)
 	double time;
 	pthread_t *threads = malloc(n_threads*sizeof(pthread_t));
 	unsigned short **seed = malloc(n_threads*sizeof(unsigned short*));
-	head = init_ffp();
+	head = init_ffp(n_threads);
 	for(int i=0; i<n_threads; i++)
 		seed[i] = malloc(3*sizeof(unsigned short));
 	if(limit_r!=0){
