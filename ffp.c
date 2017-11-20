@@ -33,13 +33,8 @@ struct ffp_node {
 	enum ntype type;
 	union unode u;
 };
-/*
-struct ffp_head {
-	struct ffp_node *entry_hash;
-	struct mr_entry *array;
-	int max_threads;
-};
-*/
+
+
 void search_remove_hash(
 		struct ffp_node *hnode,
 		unsigned long long hash);
@@ -291,9 +286,6 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 		else if(iter == hnode){
 			return;
 		}
-	}
-	while(iter->u.hash.prev !=hnode){
-		iter = iter->u.hash.prev;
 	}
 	return make_invisible(cnode, iter);
 }
