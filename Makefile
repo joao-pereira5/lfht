@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-std=c11 -g -Wall -Og -flto
+CFLAGS=-std=c11 -g -Wall -O3 -flto
 LFLAGS=-pthread -lpthread -L`jemalloc-config --libdir` -Wl,-rpath,`jemalloc-config --libdir` -ljemalloc `jemalloc-config --libs` -static
 
 all: bench
