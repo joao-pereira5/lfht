@@ -642,6 +642,7 @@ void *search_chain(
 		return NULL;
 	else if(next_node->type == ANS)
 		return search_chain(next_node, hnode, hash);
-	else
-		return search_hash(next_node, hash);
+	while(next_node->u.hash.prev != hnode)
+		next_node = next_node->u.hash.prev;
+	return search_hash(next_node, hash);
 }
