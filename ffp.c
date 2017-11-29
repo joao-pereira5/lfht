@@ -53,7 +53,7 @@ struct ffp_node *search_insert_chain(
 		unsigned long long hash,
 		void *value,
 		struct ffp_node *cnode,
-		struct ffp_node *current_valid,
+		struct ffp_node * _Atomic *current_valid,
 		struct ffp_node *expected_value,
 		int counter);
 
@@ -373,7 +373,7 @@ struct ffp_node *search_insert_hash(
 				hash,
 				value,
 				tmp,
-				NULL,
+				&(hnode->u.hash.array[pos]),
 				tmp,
 				0);
 	else
@@ -388,7 +388,7 @@ struct ffp_node *search_insert_chain(
 		unsigned long long hash,
 		void *value,
 		struct ffp_node *cnode,
-		struct ffp_node *current_valid,
+		struct ffp_node * _Atomic *current_valid,
 		struct ffp_node *expected_value,
 		int counter)
 {
@@ -396,9 +396,9 @@ struct ffp_node *search_insert_chain(
 		if(hash == cnode->u.ans.hash)
 			return cnode;
 		counter++;
-		current_valid = cnode;
+		current_valid = &(cnode->u.ans.next);
 		expected_value = valid_ptr(atomic_load_explicit(
-					&(current_valid->u.ans.next),
+					current_valid,
 					memory_order_relaxed));
 	}
 	cnode = valid_ptr(atomic_load_explicit(
@@ -411,7 +411,7 @@ struct ffp_node *search_insert_chain(
 							hnode->u.hash.hash_pos + hnode->u.hash.size,
 							hnode);
 			if(atomic_compare_exchange_strong(
-						&(current_valid->u.ans.next),
+						current_valid,
 						&expected_value,
 						new_hash)){
 				int pos = get_bucket(
@@ -441,28 +441,13 @@ struct ffp_node *search_insert_chain(
 							hash,
 							value,
 							hnode);
-			if(counter == 0){
-				int pos = get_bucket(
-						hash,
-						hnode->u.hash.hash_pos,
-						hnode->u.hash.size);
-				if(atomic_compare_exchange_strong(
-							&(hnode->u.hash.array[pos]),
-							&expected_value,
-							new_node))
-					return new_node;
-				else
-					ffp_free(new_node);
-			}
-			else{
-				if(atomic_compare_exchange_strong(
-							&(current_valid->u.ans.next),
-							&expected_value,
-							new_node))
-					return new_node;
-				else
-					ffp_free(new_node);
-			}
+			if(atomic_compare_exchange_strong(
+						current_valid,
+						&expected_value,
+						new_node))
+				return new_node;
+			else
+				ffp_free(new_node);
 		}
 		return search_insert_hash(
 				hnode,
@@ -479,14 +464,12 @@ struct ffp_node *search_insert_chain(
 				expected_value,
 				counter);
 	}
-	else{
-		while(cnode->u.hash.prev != hnode)
-			cnode = cnode->u.hash.prev;
-		return search_insert_hash(
-				cnode,
-				hash,
-				value);
-	}
+	while(cnode->u.hash.prev != hnode)
+		cnode = cnode->u.hash.prev;
+	return search_insert_hash(
+			cnode,
+			hash,
+			value);
 }
 
 //expansion functions
