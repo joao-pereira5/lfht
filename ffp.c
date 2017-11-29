@@ -537,7 +537,7 @@ void adjust_node(
 	if(!is_valid(cnode))
 		return;
 	if(iter == hnode){
-		if(current_valid == NULL){
+		if(current_valid == NULL || counter == 0){
 			if(atomic_compare_exchange_strong(
 						&(hnode->u.hash.array[pos]),
 						&expected_value,
@@ -545,22 +545,6 @@ void adjust_node(
 				if(!is_valid(cnode))
 					make_invisible(cnode, hnode);
 				return;
-			}
-			else{
-				return adjust_node(cnode, hnode);
-			}
-		}
-		else if(counter == 0){
-			if(atomic_compare_exchange_strong(
-						&(hnode->u.hash.array[pos]),
-						&expected_value,
-						cnode)){
-				if(!is_valid(cnode))
-					make_invisible(cnode, hnode);
-				return;
-			}
-			else{
-				return adjust_node(cnode, hnode);
 			}
 		}
 		else if(counter >=MAX_NODES){
@@ -597,9 +581,7 @@ void adjust_node(
 				make_invisible(cnode, hnode);
 			return;
 		}
-		else{
-			return adjust_node(cnode, hnode);
-		}
+		return adjust_node(cnode, hnode);
 	}
 	while(iter->u.hash.prev != hnode){
 		iter = iter->u.hash.prev;
