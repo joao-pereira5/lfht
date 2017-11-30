@@ -48,32 +48,33 @@ void *bench_worker(void *entry_point)
 	ffp_end_thread(head, thread_id);
 	return NULL;
 }
-
+#if FFP_DEBUG
 void *test_worker(void *entry_point)
 {
 	int thread_id = ffp_init_thread(head);
 	for(int i=0; i<test_size/n_threads; i++){
 		unsigned long long value = nrand48(entry_point);
 		if(value < limit_sf){
-			if((unsigned long long)ffp_search(head, value, thread_id)!=value)
+			if((unsigned long long)ffp_debug_search(head, value, thread_id)!=value)
 				return (void*)1;
 		}
 		else if(value < limit_r){
-			if(ffp_search(head, value, thread_id)!=NULL)
+			if(ffp_debug_search(head, value, thread_id)!=NULL)
 				return (void*)1;
 		}
 		else if(value < limit_i){
-			if((unsigned long long)ffp_search(head, value, thread_id)!=value)
+			if((unsigned long long)ffp_debug_search(head, value, thread_id)!=value)
 				return (void*)1;
 		}
 		else{
-			if(ffp_search(head, value, thread_id)!=NULL)
+			if(ffp_debug_search(head, value, thread_id)!=NULL)
 				return (void*)1;
 		}
 	}
 	ffp_end_thread(head, thread_id);
 	return NULL;
 }
+#endif
 
 int main(int argc, char **argv)
 {
@@ -130,6 +131,8 @@ int main(int argc, char **argv)
 	printf("Real time: %lf\n", time);
 	time = end_process.tv_sec - start_process.tv_sec + ((end_process.tv_nsec - start_process.tv_nsec)/1000000000.0);
 	printf("Process time: %lf\n", time);
+
+#if FFP_DEBUG
 	if(argc == 8 && argv[7][0]=='t'){
 		for(int i=0; i<n_threads; i++){
 			seed[i][0] = i;
@@ -147,5 +150,6 @@ int main(int argc, char **argv)
 		}
 		printf("Correct!\n");
 	}
+#endif
 	return 0;
 }
