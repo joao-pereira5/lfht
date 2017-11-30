@@ -1,3 +1,6 @@
+#define FFP_DEBUG 1
+
+
 struct ffp_head {
 	struct ffp_node *entry_hash;
 	struct mr_entry *array;
@@ -30,3 +33,14 @@ void ffp_remove(
 		struct ffp_head head,
 		unsigned long long hash,
 		int thread_id);
+
+//debug interface
+
+#if FFP_DEBUG
+
+void *ffp_debug_search(
+		struct ffp_head head,
+		unsigned long long hash,
+		int thread_id);
+
+#endif

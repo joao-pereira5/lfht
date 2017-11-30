@@ -4,6 +4,12 @@
 #include <ffp.h>
 #include <mr.h>
 
+#if FFP_DEBUG
+
+#include <stdio.h>
+
+#endif
+
 #define MAX_NODES 5
 #define HASH_SIZE 4
 
@@ -79,6 +85,20 @@ struct ffp_node *create_hash_node(
 		int hash_pos,
 		struct ffp_node *prev);
 
+// debug search
+#if FFP_DEBUG
+
+void *debug_search_chain(
+		struct ffp_node *cnode,
+		struct ffp_node *hnode,
+		unsigned long long hash);
+
+void *debug_search_hash(
+		struct ffp_node *hnode,
+		unsigned long long hash);
+
+#endif
+
 //interface
 
 struct ffp_head init_ffp(int max_threads){
@@ -128,6 +148,20 @@ void ffp_remove(
 			head.entry_hash,
 			hash);
 }
+
+//debug interface
+
+#if FFP_DEBUG
+
+void *ffp_debug_search(
+		struct ffp_head head,
+		unsigned long long hash,
+		int thread_id)
+{
+	return debug_search_hash(head.entry_hash, hash);
+}
+
+#endif
 
 //auxiliary
 
@@ -611,3 +645,50 @@ void *search_chain(
 		next_node = next_node->u.hash.prev;
 	return search_hash(next_node, hash);
 }
+
+// debug searching
+
+#if FFP_DEBUG
+
+void *debug_search_hash(
+		struct ffp_node *hnode,
+		unsigned long long hash)
+{
+	int pos = get_bucket(
+			hash,
+			hnode->u.hash.hash_pos,
+			hnode->u.hash.size);
+	struct ffp_node *next_node = atomic_load_explicit(
+			&(hnode->u.hash.array[pos]),
+			memory_order_relaxed);
+	if(next_node == hnode)
+		return NULL;
+	else if(next_node->type == HASH)
+		return debug_search_hash(next_node, hash);
+	else
+		return debug_search_chain(next_node, hnode, hash);
+}
+
+void *debug_search_chain(
+		struct ffp_node *cnode,
+		struct ffp_node *hnode,
+		unsigned long long hash)
+{
+	if(cnode->u.ans.hash == hash){
+		if(is_valid(cnode))
+			printf("Invalid node found: %p\n", cnode->u.ans.value);
+		return cnode->u.ans.value;
+	}
+	struct ffp_node *next_node = valid_ptr(atomic_load_explicit(
+				&(cnode->u.ans.next),
+				memory_order_relaxed));
+	if(next_node == hnode)
+		return NULL;
+	else if(next_node->type == ANS)
+		return debug_search_chain(next_node, hnode, hash);
+	while(next_node->u.hash.prev != hnode)
+		next_node = next_node->u.hash.prev;
+	return debug_search_hash(next_node, hash);
+}
+
+#endif
