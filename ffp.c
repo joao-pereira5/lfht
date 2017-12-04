@@ -104,19 +104,19 @@ void *debug_search_hash(
 struct ffp_head init_ffp(int max_threads){
 	struct ffp_head head;
 	head.entry_hash = create_hash_node(HASH_SIZE, 0, NULL);
-	head.array = init_mr(max_threads);
+	head.thread_array = init_mr(max_threads);
 	head.max_threads = max_threads;
 	return head;
 }
 
 int ffp_init_thread(struct ffp_head head)
 {
-	return mr_thread_acquire(head.array, head.max_threads);
+	return mr_thread_acquire(head.thread_array, head.max_threads);
 }
 
 void ffp_end_thread(struct ffp_head head, int thread_id)
 {
-	return mr_thread_release(head.array, thread_id);
+	return mr_thread_release(head.thread_array, thread_id);
 }
 
 void *ffp_search(

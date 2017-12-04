@@ -3,7 +3,7 @@
 
 struct ffp_head {
 	struct ffp_node *entry_hash;
-	struct mr_entry *array;
+	struct mr_entry *thread_array;
 	int max_threads;
 };
 
