@@ -2,10 +2,12 @@
 #include <stdatomic.h>
 #include <mr.h>
 
+#define CACHE_LINE_SIZE 64
+
 struct mr_entry {
 	void *tls;
 	atomic_flag claim;
-};
+} __attribute__((aligned(CACHE_LINE_SIZE)));
 
 struct mr_entry *init_mr(int max_threads)
 {
