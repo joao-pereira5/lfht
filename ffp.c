@@ -675,9 +675,10 @@ void *debug_search_chain(
 		unsigned long long hash)
 {
 	if(cnode->u.ans.hash == hash){
-		if(is_valid(cnode))
+		if(!is_valid(cnode))
 			printf("Invalid node found: %p\n", cnode->u.ans.value);
-		return cnode->u.ans.value;
+		else
+			return cnode->u.ans.value;
 	}
 	struct ffp_node *next_node = valid_ptr(atomic_load_explicit(
 				&(cnode->u.ans.next),
