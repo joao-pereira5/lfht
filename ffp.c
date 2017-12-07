@@ -440,10 +440,13 @@ struct ffp_node *search_insert_chain(
 		expected_value = valid_ptr(atomic_load_explicit(
 					current_valid,
 					memory_order_relaxed));
+		cnode = expected_value;
 	}
-	cnode = valid_ptr(atomic_load_explicit(
-				&(cnode->u.ans.next),
-				memory_order_relaxed));
+	else{
+		cnode = valid_ptr(atomic_load_explicit(
+					&(cnode->u.ans.next),
+					memory_order_relaxed));
+	}
 	if(cnode == hnode){
 		if(counter >= MAX_NODES){
 			struct ffp_node *new_hash = create_hash_node(
