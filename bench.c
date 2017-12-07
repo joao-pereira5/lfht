@@ -144,7 +144,7 @@ int main(int argc, char **argv)
 		for(int i=0; i<n_threads; i++){
 			pthread_join(threads[i], &retval);
 			if(retval != NULL){
-				printf("Failed!\n");
+				fprintf(stderr, "Failed!\n");
 				return -2;
 			}
 		}

@@ -7,11 +7,17 @@
 #if FFP_DEBUG
 
 #include <stdio.h>
+#include <assert.h>
 
-#endif
+#define MAX_NODES 2
+#define HASH_SIZE 1
+
+#else
 
 #define MAX_NODES 5
 #define HASH_SIZE 4
+
+#endif
 
 enum ntype {HASH, ANS};
 
@@ -676,7 +682,7 @@ void *debug_search_chain(
 {
 	if(cnode->u.ans.hash == hash){
 		if(!is_valid(cnode))
-			printf("Invalid node found: %p\n", cnode->u.ans.value);
+			fprintf(stderr, "Invalid node found: %p\n", cnode->u.ans.value);
 		else
 			return cnode->u.ans.value;
 	}
