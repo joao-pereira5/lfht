@@ -4,6 +4,12 @@
 #include <pthread.h>
 #include <time.h>
 
+#if FFP_DEBUG
+
+#include <assert.h>
+
+#endif
+
 unsigned long long limit_sf,
                    limit_r,
                    limit_i,
@@ -31,8 +37,12 @@ void *bench_worker(void *entry_point)
 	for(int i=0; i<test_size/n_threads; i++){
 		unsigned long long value = nrand48(entry_point);
 		if(value < limit_sf){
+#if FFP_DEBUG
+			assert((unsigned long long)ffp_search(head, value, thread_id)==value);
+#else
 			if((unsigned long long)ffp_search(head, value, thread_id)!=value)
-				printf("failiure: item not match %lld\n", value);
+				fprintf(stderr, "failiure: item not match %lld\n", value);
+#endif
 		}
 		else if(value < limit_r){
 			ffp_remove(head, value, thread_id);
@@ -41,8 +51,12 @@ void *bench_worker(void *entry_point)
 			ffp_insert(head, value, (void*)value, thread_id);
 		}
 		else{
+#if FFP_DEBUG
+			assert(ffp_search(head, value, thread_id) == NULL);
+#else
 			if(ffp_search(head, value, thread_id)!=NULL)
-				printf("failiure: found item %lld\n", value);
+				fprintf(stderr, "failiure: found item %lld\n", value);
+#endif
 		}
 	}
 	ffp_end_thread(head, thread_id);
@@ -55,20 +69,16 @@ void *test_worker(void *entry_point)
 	for(int i=0; i<test_size/n_threads; i++){
 		unsigned long long value = nrand48(entry_point);
 		if(value < limit_sf){
-			if((unsigned long long)ffp_debug_search(head, value, thread_id)!=value)
-				return (void*)1;
+			assert((unsigned long long)ffp_debug_search(head, value, thread_id)==value);
 		}
 		else if(value < limit_r){
-			if(ffp_debug_search(head, value, thread_id)!=NULL)
-				return (void*)1;
+			assert(ffp_debug_search(head, value, thread_id)==NULL);
 		}
 		else if(value < limit_i){
-			if((unsigned long long)ffp_debug_search(head, value, thread_id)!=value)
-				return (void*)1;
+			assert((unsigned long long)ffp_debug_search(head, value, thread_id)==value);
 		}
 		else{
-			if(ffp_debug_search(head, value, thread_id)!=NULL)
-				return (void*)1;
+			assert(ffp_debug_search(head, value, thread_id)==NULL);
 		}
 	}
 	ffp_end_thread(head, thread_id);
@@ -79,7 +89,7 @@ void *test_worker(void *entry_point)
 int main(int argc, char **argv)
 {
 	if(argc < 7){
-		printf("usage: bench <treads> <nodes> <inserts> <removes> <searches found> <searches not found>\nAdd 't' at the end to verify integrity\n");
+		printf("usage: bench <threads> <nodes> <inserts> <removes> <searches found> <searches not found>\nAdd 't' at the end to verify integrity\n");
 		return -1;
 	}
 	printf("preparing data.\n");
@@ -140,13 +150,8 @@ int main(int argc, char **argv)
 			seed[i][2] = i;
 			pthread_create(&threads[i], NULL, test_worker, seed[i]);
 		}
-		void *retval;
 		for(int i=0; i<n_threads; i++){
-			pthread_join(threads[i], &retval);
-			if(retval != NULL){
-				fprintf(stderr, "Failed!\n");
-				return -2;
-			}
+			pthread_join(threads[i], NULL);
 		}
 		printf("Correct!\n");
 	}
