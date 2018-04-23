@@ -1,13 +1,16 @@
 CC=gcc
-CFLAGS=-std=gnu11 -g -Wall -O3 -flto
+CFLAGS=-std=gnu11 -g -Wall -O0 -flto
 LFLAGS=-pthread -lpthread
 JEFLAGS=-L`jemalloc-config --libdir` -Wl,-rpath,`jemalloc-config --libdir` -ljemalloc `jemalloc-config --libs` -static
 SEQFLAGS=-ldl
 
-all: bench_glc bench_je bench_seq
+all: bench_glc bench_je bench_seq bench_lf
 
 bench_seq: bench.o ffp.o mr.o
 	$(CC) $(CFLAGS) bench.o ffp.o mr.o deps/seqmalloc/seqmalloc.a $(LFLAGS) $(SEQFLAGS) -I. -o bench_seq
+
+bench_lf: bench.o ffp.o mr.o
+	$(CC) $(CFLAGS) bench.o ffp.o mr.o deps/lfmalloc/lfmalloc.a -lstdc++ $(LFLAGS) $(SEQFLAGS) -I. -o bench_lf
 
 bench_je: bench.o ffp.o mr.o
 	$(CC) $(CFLAGS) bench.o ffp.o mr.o $(LFLAGS) $(JEFLAGS) -I. -o bench_je
