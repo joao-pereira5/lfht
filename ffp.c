@@ -523,7 +523,6 @@ void adjust_chain_nodes(struct ffp_node *cnode, struct ffp_node *hnode)
 	if(next != hnode)
 		adjust_chain_nodes(next, hnode);
 	if(is_valid(cnode)){
-		force_cas(cnode, hnode);
 		adjust_node(cnode, hnode);
 	}
 	return;
@@ -538,16 +537,16 @@ void adjust_node(
 			cnode->ans.hash,
 			hnode->hash.hash_pos,
 			hnode->hash.size);
-	struct ffp_node *current_valid = NULL,
-			*expected_value = atomic_load_explicit(
-					&(hnode->hash.array[pos]),
-					memory_order_relaxed),
+	struct ffp_node * _Atomic *current_valid = &(hnode->hash.array[pos]),
+			*expected_value = valid_ptr(atomic_load_explicit(
+					current_valid,
+					memory_order_relaxed)),
 			*iter = expected_value;
 	while(iter->type == ANS){
 		if(is_valid(iter)){
-			current_valid = iter;
+			current_valid = &(iter->ans.next);
 			expected_value = valid_ptr(atomic_load_explicit(
-						&(current_valid->ans.next),
+						current_valid,
 						memory_order_relaxed));
 			iter = expected_value;
 			counter++;
@@ -561,24 +560,14 @@ void adjust_node(
 	if(!is_valid(cnode))
 		return;
 	if(iter == hnode){
-		if(current_valid == NULL || counter == 0){
-			if(atomic_compare_exchange_strong(
-						&(hnode->hash.array[pos]),
-						&expected_value,
-						cnode)){
-				if(!is_valid(cnode))
-					make_invisible(cnode, hnode);
-				return;
-			}
-		}
-		else if(counter >=MAX_NODES){
+		if(counter >=MAX_NODES){
 			struct ffp_node *new_hash = create_hash_node(
 					HASH_SIZE,
 					hnode->hash.hash_pos + hnode->hash.size,
 					hnode);
 			if(atomic_compare_exchange_strong(
-						&(current_valid->ans.next),
-						&(expected_value),
+						current_valid,
+						&expected_value,
 						new_hash)){
 				adjust_chain_nodes(
 						atomic_load_explicit(
@@ -597,13 +586,16 @@ void adjust_node(
 				ffp_free(new_hash);
 			}
 		}
-		else if(atomic_compare_exchange_strong(
-					&(current_valid->ans.next),
-					&expected_value,
-					cnode)){
-			if(!is_valid(cnode))
-				make_invisible(cnode, hnode);
-			return;
+		else{
+			force_cas(cnode, hnode);
+			if(atomic_compare_exchange_strong(
+						current_valid,
+						&expected_value,
+						cnode)){
+				if(!is_valid(cnode))
+					make_invisible(cnode, hnode);
+				return;
+			}
 		}
 		return adjust_node(cnode, hnode);
 	}
