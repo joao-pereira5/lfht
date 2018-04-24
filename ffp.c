@@ -244,17 +244,19 @@ int is_valid(struct ffp_node *cnode)
 				memory_order_relaxed) & 1);
 }
 
-void force_cas(struct ffp_node *node, struct ffp_node *hash)
+int force_cas(struct ffp_node *node, struct ffp_node *hash)
 {
 	struct ffp_node *expect = atomic_load_explicit(
 			&(node->ans.next),
 			memory_order_relaxed);
 	do{
-		hash = (struct ffp_node*)(((uintptr_t) expect & 1) | (uintptr_t) hash);
+		if(((uintptr_t) expect & 1) == 1)
+			return 0;
 	}while(!atomic_compare_exchange_weak(
 				&(node->ans.next),
 				&expect,
 				hash));
+	return 1;
 }
 
 struct ffp_node *get_next_valid(struct ffp_node *node)
@@ -281,16 +283,16 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 				cnode->ans.hash,
 				hnode->hash.hash_pos,
 				hnode->hash.size);
-		iter = atomic_load_explicit(
-				&(hnode->hash.array[pos]),
-				memory_order_relaxed);
-		struct ffp_node *valid_before = NULL;
-		struct ffp_node *valid_before_next = iter;
+		struct ffp_node * _Atomic *valid_before = &(hnode->hash.array[pos]),
+				*valid_before_next = atomic_load_explicit(
+						valid_before,
+						memory_order_relaxed);
+		iter = valid_before_next;
 		while(iter !=cnode && iter->type == ANS){
 			if(is_valid(iter)){
-				valid_before = iter;
+				valid_before = &(iter->ans.next);
 				valid_before_next = valid_ptr(atomic_load_explicit(
-							&(iter->ans.next),
+							valid_before,
 							memory_order_relaxed));
 				iter = valid_before_next;
 			}
@@ -301,25 +303,20 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 			}
 		}
 		if(iter == cnode){
-			if(valid_before == NULL){
-				if(atomic_compare_exchange_strong(
-							&(hnode->hash.array[pos]),
-							&valid_before_next,
-							valid_after))
-					return;
-			}
-			else{
-				if(atomic_compare_exchange_strong(
-							&(valid_before->ans.next),
-							&valid_before_next,
-							valid_after))
-					return;
-			}
-			return make_invisible(cnode, hnode);
+			if(atomic_compare_exchange_strong(
+						valid_before,
+						&valid_before_next,
+						valid_after))
+				return;
+			else
+				return make_invisible(cnode, hnode);
 		}
 		else if(iter == hnode){
 			return;
 		}
+	}
+	else if(iter->hash.hash_pos < hnode->hash.hash_pos){
+		return;
 	}
 	return make_invisible(cnode, iter);
 }
@@ -557,8 +554,6 @@ void adjust_node(
 						memory_order_relaxed));
 		}
 	}
-	if(!is_valid(cnode))
-		return;
 	if(iter == hnode){
 		if(counter >=MAX_NODES){
 			struct ffp_node *new_hash = create_hash_node(
@@ -587,7 +582,8 @@ void adjust_node(
 			}
 		}
 		else{
-			force_cas(cnode, hnode);
+			if(!force_cas(cnode, hnode))
+				return;
 			if(atomic_compare_exchange_strong(
 						current_valid,
 						&expected_value,
