@@ -45,27 +45,14 @@ struct ffp_node {
 };
 
 
-void search_remove_hash(
+void search_remove(
 		struct ffp_node *hnode,
 		unsigned long long hash);
 
-void search_remove_chain(
-		struct ffp_node *hnode,
-		unsigned long long hash);
-
-struct ffp_node *search_insert_hash(
+struct ffp_node *search_insert(
 		struct ffp_node *hnode,
 		unsigned long long hash,
 		void *value);
-
-struct ffp_node *search_insert_chain(
-		struct ffp_node *hnode,
-		unsigned long long hash,
-		void *value,
-		struct ffp_node *cnode,
-		struct ffp_node * _Atomic *current_valid,
-		struct ffp_node *expected_value,
-		int counter);
 
 void adjust_chain_nodes(
 		struct ffp_node *cnode,
@@ -75,12 +62,7 @@ void adjust_node(
 		struct ffp_node *cnode,
 		struct ffp_node *hnode);
 
-void *search_chain(
-		struct ffp_node *cnode,
-		struct ffp_node *hnode,
-		unsigned long long hash);
-
-void *search_hash(
+void *search_node(
 		struct ffp_node *hnode,
 		unsigned long long hash);
 
@@ -128,7 +110,7 @@ void *ffp_search(
 		unsigned long long hash,
 		int thread_id)
 {
-	return search_hash(head.entry_hash, hash);
+	return search_node(head.entry_hash, hash);
 }
 
 struct ffp_node *ffp_insert(
@@ -137,7 +119,7 @@ struct ffp_node *ffp_insert(
 		void *value,
 		int thread_id)
 {
-	return search_insert_hash(
+	return search_insert(
 			head.entry_hash,
 			hash,
 			value);
@@ -148,7 +130,7 @@ void ffp_remove(
 		unsigned long long hash,
 		int thread_id)
 {
-	return search_remove_hash(
+	return search_remove(
 			head.entry_hash,
 			hash);
 }
@@ -270,6 +252,71 @@ struct ffp_node *get_next_valid(struct ffp_node *node)
 		return get_next_valid(node);
 }
 
+inline int find_node(
+		unsigned long long hash,
+		struct ffp_node **hnode,
+		struct ffp_node **nodeptr,
+		struct ffp_node * _Atomic **last_valid,
+		int *count)
+{
+	struct ffp_node *iter;
+	int pos = get_bucket(
+			hash,
+			(*hnode)->hash.hash_pos,
+			(*hnode)->hash.size);
+	if(last_valid){
+		*last_valid = &((*hnode)->hash.array[pos]);
+		*nodeptr = atomic_load_explicit(
+				*last_valid,
+				memory_order_relaxed);
+		iter = *nodeptr;
+	}
+	else{
+		iter = atomic_load_explicit(
+				&((*hnode)->hash.array[pos]),
+				memory_order_relaxed);
+	}
+	if(count)
+		*count = 0;
+	while(iter != *hnode){
+		if(iter->type == HASH){
+			*hnode = iter;
+			return find_node(
+					hash,
+					hnode,
+					nodeptr,
+					last_valid,
+					count);
+		}
+		else if(is_valid(iter)){
+			if(iter->ans.hash == hash){
+				*nodeptr = iter;
+				return 1;
+			}
+			if(last_valid){
+				*last_valid = &(iter->ans.next);
+				*nodeptr = valid_ptr(atomic_load_explicit(
+							*last_valid,
+							memory_order_relaxed));
+				iter = *nodeptr;
+			}
+			else{
+				iter = valid_ptr(atomic_load_explicit(
+							&(iter->ans.next),
+							memory_order_relaxed));
+			}
+			if(count)
+				(*count)++;
+		}
+		else{
+			iter = valid_ptr(atomic_load_explicit(
+						&(iter->ans.next),
+						memory_order_relaxed));
+		}
+	}
+	return 0;
+}
+
 void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 {
 	struct ffp_node *valid_after = get_next_valid(cnode);
@@ -323,189 +370,75 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 
 //remove functions
 
-void search_remove_chain(
+void search_remove(
 		struct ffp_node *hnode,
 		unsigned long long hash)
 {
-	int pos = get_bucket(
-			hash,
-			hnode->hash.hash_pos,
-			hnode->hash.size);
-	struct ffp_node *iter = atomic_load_explicit(
-			&(hnode->hash.array[pos]),
-			memory_order_relaxed);
-	while(iter->type == ANS){
-		if(is_valid(iter)){
-			if(hash == iter->ans.hash){
-				if(mark_invalid(iter)){
-					make_invisible(iter, hnode);
-				}
-				return;
-			}
-		}
-		iter = valid_ptr(atomic_load_explicit(
-					&(iter->ans.next),
-					memory_order_relaxed));
+	struct ffp_node *cnode;
+	if(find_node(hash, &hnode, &cnode, NULL, NULL)){
+		if(mark_invalid(cnode))
+			make_invisible(cnode, hnode);
 	}
-	if(iter == hnode)
-		return;
-	while(iter->hash.prev != hnode){
-		iter = iter->hash.prev;
-	}
-	search_remove_hash(iter, hash);
-}
-
-void search_remove_hash(
-		struct ffp_node *hnode,
-		unsigned long long hash)
-{
-	int pos = get_bucket(
-			hash,
-			hnode->hash.hash_pos,
-			hnode->hash.size);
-	struct ffp_node *entry_node = atomic_load_explicit(
-			&(hnode->hash.array[pos]),
-			memory_order_relaxed);
-	if(entry_node != hnode){
-		if(entry_node->type == ANS)
-			search_remove_chain(hnode, hash);
-		else
-			search_remove_hash(entry_node, hash);
-	}
+	return;
 }
 
 //insertion functions
 
-struct ffp_node *search_insert_hash(
+struct ffp_node *search_insert(
 		struct ffp_node *hnode,
 		unsigned long long hash,
 		void *value)
 {
-	int pos = get_bucket(
-			hash,
-			hnode->hash.hash_pos,
-			hnode->hash.size);
-	struct ffp_node *tmp = atomic_load_explicit(
-			&(hnode->hash.array[pos]),
-			memory_order_relaxed);
-	if(hnode == tmp){
-		struct ffp_node *hcopy = hnode,
-				*new_node = create_ans_node(
-						hash,
-						value,
+	struct ffp_node *cnode,
+			* _Atomic *last_valid;
+	int count;
+	if(find_node(hash, &hnode, &cnode, &last_valid, &count))
+		return cnode;
+	if(count >= MAX_NODES){
+		struct ffp_node *new_hash = create_hash_node(
+						HASH_SIZE,
+						hnode->hash.hash_pos + hnode->hash.size,
 						hnode);
 		if(atomic_compare_exchange_strong(
+					last_valid,
+					&cnode,
+					new_hash)){
+			int pos = get_bucket(
+					hash,
+					hnode->hash.hash_pos,
+					hnode->hash.size);
+			adjust_chain_nodes(
+					atomic_load_explicit(
+						&(hnode->hash.array[pos]),
+						memory_order_relaxed),
+					new_hash);
+			atomic_store(
 					&(hnode->hash.array[pos]),
-					&hcopy,
+					new_hash);
+			return search_insert(
+					new_hash,
+					hash,
+					value);
+		}
+		else{
+			ffp_free(new_hash);
+		}
+	}
+	else{
+		struct ffp_node *new_node = create_ans_node(
+				hash,
+				value,
+				hnode);
+		if(atomic_compare_exchange_strong(
+					last_valid,
+					&cnode,
 					new_node))
 			return new_node;
 		else
 			ffp_free(new_node);
 	}
-	if(tmp->type==ANS)
-		return search_insert_chain(
-				hnode,
-				hash,
-				value,
-				tmp,
-				&(hnode->hash.array[pos]),
-				tmp,
-				0);
-	else
-		return search_insert_hash(
-				tmp,
-				hash,
-				value);
-}
-
-struct ffp_node *search_insert_chain(
-		struct ffp_node *hnode,
-		unsigned long long hash,
-		void *value,
-		struct ffp_node *cnode,
-		struct ffp_node * _Atomic *current_valid,
-		struct ffp_node *expected_value,
-		int counter)
-{
-	if(is_valid(cnode)){
-		if(hash == cnode->ans.hash)
-			return cnode;
-		counter++;
-		current_valid = &(cnode->ans.next);
-		expected_value = valid_ptr(atomic_load_explicit(
-					current_valid,
-					memory_order_relaxed));
-		cnode = expected_value;
-	}
-	else{
-		cnode = valid_ptr(atomic_load_explicit(
-					&(cnode->ans.next),
-					memory_order_relaxed));
-	}
-	if(cnode == hnode){
-		if(counter >= MAX_NODES){
-			struct ffp_node *new_hash = create_hash_node(
-							HASH_SIZE,
-							hnode->hash.hash_pos + hnode->hash.size,
-							hnode);
-			if(atomic_compare_exchange_strong(
-						current_valid,
-						&expected_value,
-						new_hash)){
-				int pos = get_bucket(
-						hash,
-						hnode->hash.hash_pos,
-						hnode->hash.size);
-				adjust_chain_nodes(
-						atomic_load_explicit(
-							&(hnode->hash.array[pos]),
-							memory_order_relaxed),
-						new_hash);
-				atomic_store_explicit(
-						&(hnode->hash.array[pos]),
-						new_hash,
-						memory_order_relaxed);
-				return search_insert_hash(
-						new_hash,
-						hash,
-						value);
-			}
-			else{
-				ffp_free(new_hash);
-			}
-		}
-		else{
-			struct ffp_node *new_node = create_ans_node(
-							hash,
-							value,
-							hnode);
-			if(atomic_compare_exchange_strong(
-						current_valid,
-						&expected_value,
-						new_node))
-				return new_node;
-			else
-				ffp_free(new_node);
-		}
-		return search_insert_hash(
-				hnode,
-				hash,
-				value);
-	}
-	if(cnode->type==ANS){
-		return search_insert_chain(
-				hnode,
-				hash,
-				value,
-				cnode,
-				current_valid,
-				expected_value,
-				counter);
-	}
-	while(cnode->hash.prev != hnode)
-		cnode = cnode->hash.prev;
-	return search_insert_hash(
-			cnode,
+	return search_insert(
+			hnode,
 			hash,
 			value);
 }
@@ -603,42 +536,15 @@ void adjust_node(
 
 // searching functions
 
-void *search_hash(
+void *search_node(
 		struct ffp_node *hnode,
 		unsigned long long hash)
 {
-	int pos = get_bucket(
-			hash,
-			hnode->hash.hash_pos,
-			hnode->hash.size);
-	struct ffp_node *next_node = atomic_load_explicit(
-			&(hnode->hash.array[pos]),
-			memory_order_relaxed);
-	if(next_node == hnode)
-		return NULL;
-	else if(next_node->type == HASH)
-		return search_hash(next_node, hash);
-	else
-		return search_chain(next_node, hnode, hash);
-}
-
-void *search_chain(
-		struct ffp_node *cnode,
-		struct ffp_node *hnode,
-		unsigned long long hash)
-{
-	if(cnode->ans.hash == hash && is_valid(cnode))
+	struct ffp_node *cnode;
+	if(find_node(hash, &hnode, &cnode, NULL, NULL))
 		return cnode->ans.value;
-	struct ffp_node *next_node = valid_ptr(atomic_load_explicit(
-				&(cnode->ans.next),
-				memory_order_relaxed));
-	if(next_node == hnode)
+	else
 		return NULL;
-	else if(next_node->type == ANS)
-		return search_chain(next_node, hnode, hash);
-	while(next_node->hash.prev != hnode)
-		next_node = next_node->hash.prev;
-	return search_hash(next_node, hash);
 }
 
 // debug searching
