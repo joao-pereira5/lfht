@@ -280,6 +280,8 @@ inline int find_node(
 		*count = 0;
 	while(iter != *hnode){
 		if(iter->type == HASH){
+			while(iter->hash.prev != *hnode)
+				iter = iter->hash.prev;
 			*hnode = iter;
 			return find_node(
 					hash,
