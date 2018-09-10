@@ -213,7 +213,7 @@ int mark_invalid(struct ffp_node *cnode)
 {
 	struct ffp_node *expect = valid_ptr(atomic_load_explicit(
 				&(cnode->ans.next),
-				memory_order_relaxed));
+				memory_order_seq_cst));
 	while(!atomic_compare_exchange_weak(
 				&(cnode->ans.next),
 				&expect,
@@ -228,7 +228,7 @@ int force_cas(struct ffp_node *node, struct ffp_node *hash)
 {
 	struct ffp_node *expect = atomic_load_explicit(
 			&(node->ans.next),
-			memory_order_relaxed);
+			memory_order_seq_cst);
 	do{
 		if(((uintptr_t) expect & 1) == 1)
 			return 0;
@@ -255,13 +255,13 @@ int find_node(
 		*last_valid = &((*hnode)->hash.array[pos]);
 		*nodeptr = atomic_load_explicit(
 				*last_valid,
-				memory_order_relaxed);
+				memory_order_seq_cst);
 		iter = *nodeptr;
 	}
 	else{
 		iter = atomic_load_explicit(
 				&((*hnode)->hash.array[pos]),
-				memory_order_relaxed);
+				memory_order_seq_cst);
 	}
 	if(count)
 		*count = 0;
@@ -279,7 +279,7 @@ int find_node(
 		}
 		struct ffp_node *tmp = atomic_load_explicit(
 				&(iter->ans.next),
-				memory_order_relaxed);
+				memory_order_seq_cst);
 		if(!get_flag(tmp)){
 			if(iter->ans.hash == hash){
 				*nodeptr = iter;
@@ -307,19 +307,19 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 {
 	struct ffp_node *iter = atomic_load_explicit(
 			&(cnode->ans.next),
-			memory_order_relaxed),
+			memory_order_seq_cst),
 			*valid_after;
 	while(get_flag(iter)){
 		valid_after = valid_ptr(iter);
 		iter = atomic_load_explicit(
 				&(valid_after->ans.next),
-				memory_order_relaxed);
+				memory_order_seq_cst);
 	}
 	iter = valid_after;
 	while(iter->type != HASH)
 		iter = valid_ptr(atomic_load_explicit(
 					&(iter->ans.next),
-					memory_order_relaxed));
+					memory_order_seq_cst));
 	if(iter == hnode){
 		int pos = get_bucket(
 				cnode->ans.hash,
@@ -328,12 +328,12 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 		struct ffp_node * _Atomic *valid_before = &(hnode->hash.array[pos]),
 				*valid_before_next = atomic_load_explicit(
 						valid_before,
-						memory_order_relaxed);
+						memory_order_seq_cst);
 		iter = valid_before_next;
 		while(iter !=cnode && iter->type == ANS){
 			struct ffp_node *tmp = atomic_load_explicit(
 					&(iter->ans.next),
-					memory_order_relaxed);
+					memory_order_seq_cst);
 			if(!get_flag(tmp)){
 				valid_before = &(iter->ans.next);
 				valid_before_next = valid_ptr(tmp);
@@ -404,7 +404,7 @@ struct ffp_node *search_insert(
 			adjust_chain_nodes(
 					atomic_load_explicit(
 						&(hnode->hash.array[pos]),
-						memory_order_relaxed),
+						memory_order_seq_cst),
 					new_hash);
 			atomic_store(
 					&(hnode->hash.array[pos]),
@@ -443,7 +443,7 @@ void adjust_chain_nodes(struct ffp_node *cnode, struct ffp_node *hnode)
 {
 	struct ffp_node *tmp = atomic_load_explicit(
 			&(cnode->ans.next),
-			memory_order_relaxed),
+			memory_order_seq_cst),
 			*next = valid_ptr(tmp);
 	if(next != hnode)
 		adjust_chain_nodes(next, hnode);
@@ -465,12 +465,12 @@ void adjust_node(
 	struct ffp_node * _Atomic *current_valid = &(hnode->hash.array[pos]),
 			*expected_value = valid_ptr(atomic_load_explicit(
 					current_valid,
-					memory_order_relaxed)),
+					memory_order_seq_cst)),
 			*iter = expected_value;
 	while(iter->type == ANS){
 		struct ffp_node *tmp = atomic_load_explicit(
 				&(iter->ans.next),
-				memory_order_relaxed);
+				memory_order_seq_cst);
 		if(!get_flag(tmp)){
 			current_valid = &(iter->ans.next);
 			expected_value = valid_ptr(tmp);
@@ -494,12 +494,12 @@ void adjust_node(
 				adjust_chain_nodes(
 						atomic_load_explicit(
 							&(hnode->hash.array[pos]),
-							memory_order_relaxed),
+							memory_order_seq_cst),
 						new_hash);
 				atomic_store_explicit(
 						&(hnode->hash.array[pos]),
 						new_hash,
-						memory_order_relaxed);
+						memory_order_seq_cst);
 				return adjust_node(
 						cnode,
 						new_hash);
@@ -517,7 +517,7 @@ void adjust_node(
 						cnode)){
 				if(get_flag(atomic_load_explicit(
 								&(cnode->ans.next),
-								memory_order_relaxed)))
+								memory_order_seq_cst)))
 					make_invisible(cnode, hnode);
 				return;
 			}
@@ -557,7 +557,7 @@ void *debug_search_hash(
 			hnode->hash.size);
 	struct ffp_node *next_node = atomic_load_explicit(
 			&(hnode->hash.array[pos]),
-			memory_order_relaxed);
+			memory_order_seq_cst);
 	if(next_node == hnode)
 		return NULL;
 	else if(next_node->type == HASH)
@@ -574,14 +574,14 @@ void *debug_search_chain(
 	if(cnode->ans.hash == hash){
 		if(get_flag(atomic_load_explicit(
 						&(cnode->ans.next),
-						memory_order_relaxed)))
+						memory_order_seq_cst)))
 			fprintf(stderr, "Invalid node found: %p\n", cnode->ans.value);
 		else
 			return cnode->ans.value;
 	}
 	struct ffp_node *next_node = valid_ptr(atomic_load_explicit(
 				&(cnode->ans.next),
-				memory_order_relaxed));
+				memory_order_seq_cst));
 	if(next_node == hnode)
 		return NULL;
 	else if(next_node->type == ANS)

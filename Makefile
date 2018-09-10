@@ -5,13 +5,13 @@ JEFLAGS=-L`jemalloc-config --libdir` -Wl,-rpath,`jemalloc-config --libdir` -ljem
 SEQFLAGS=-ldl
 LFFLAGS=-lstdc++ -ldl
 
-all: bench_glc bench_je bench_seq bench_lf
+all: bench_glc bench_je bench_seq bench_lr
 
 bench_seq: bench.o ffp.o mr.o
 	$(CC) $(CFLAGS) bench.o ffp.o mr.o deps/seqmalloc/seqmalloc.a $(LFLAGS) $(SEQFLAGS) -o bench_seq
 
-bench_lf: bench.o ffp.o mr.o
-	$(CC) $(CFLAGS) bench.o ffp.o mr.o deps/lfmalloc/lfmalloc.a $(LFLAGS) $(LFFLAGS) -o bench_lf
+bench_lr: bench.o ffp.o mr.o
+	$(CC) $(CFLAGS) bench.o ffp.o mr.o deps/lrmalloc/lrmalloc.a $(LFLAGS) $(LFFLAGS) -o bench_lr
 
 bench_je: bench.o ffp.o mr.o
 	$(CC) $(CFLAGS) bench.o ffp.o mr.o $(LFLAGS) $(JEFLAGS) -o bench_je
