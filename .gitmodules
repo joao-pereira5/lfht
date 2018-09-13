@@ -1,6 +1,0 @@
-[submodule "deps/seqmalloc"]
-	path = deps/seqmalloc
-	url = git@github.com:Nespa32/seqmalloc.git
-[submodule "deps/lfmalloc"]
-	path = deps/lfmalloc
-	url = git@github.com:Nespa32/lfmalloc.git
