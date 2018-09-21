@@ -1,5 +1,6 @@
-#define FFP_DEBUG 1
-
+#ifndef FFP_DEBUG
+#define FFP_DEBUG 0
+#endif
 
 struct ffp_head {
 	struct ffp_node *entry_hash;

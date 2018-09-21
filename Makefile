@@ -1,32 +1,42 @@
 CC=gcc
-CFLAGS=-std=gnu11 -g -Wall -O2 -flto -I.
+CFLAGS=-std=gnu11 -Wall -flto -I.
+OPT= -O3
 LFLAGS=-pthread -lpthread
+DEBUG= -g -O0 -DFFP_DEBUG=1
 JEFLAGS=-L`jemalloc-config --libdir` -Wl,-rpath,`jemalloc-config --libdir` -ljemalloc `jemalloc-config --libs` -static
-SEQFLAGS=-ldl
-LFFLAGS=-lstdc++ -ldl
 
-all: bench_glc bench_je bench_seq bench_lr
 
-bench_seq: bench.o ffp.o mr.o
-	$(CC) $(CFLAGS) bench.o ffp.o mr.o deps/seqmalloc/seqmalloc.a $(LFLAGS) $(SEQFLAGS) -o bench_seq
-
-bench_lr: bench.o ffp.o mr.o
-	$(CC) $(CFLAGS) bench.o ffp.o mr.o deps/lrmalloc/lrmalloc.a $(LFLAGS) $(LFFLAGS) -o bench_lr
+default: bench bench_je
+all: bench bench_je bench_debug bench_debug_je
 
 bench_je: bench.o ffp.o mr.o
-	$(CC) $(CFLAGS) bench.o ffp.o mr.o $(LFLAGS) $(JEFLAGS) -o bench_je
+	$(CC) $(CFLAGS) $(OPT) bench.o ffp.o mr.o $(LFLAGS) $(JEFLAGS) -o bench_je
 
-bench_glc: bench.o ffp.o mr.o
-	$(CC) $(CFLAGS) bench.o ffp.o mr.o $(LFLAGS) -o bench_glc
+bench: bench.o ffp.o mr.o
+	$(CC) $(CFLAGS) $(OPT) bench.o ffp.o mr.o $(LFLAGS) -o bench_glc
 
 bench.o: bench.c ffp.h
-	$(CC) -c bench.c $(CFLAGS) $(LFLAGS)
+	$(CC) -c bench.c $(CFLAGS) $(OPT) $(LFLAGS)
 
 ffp.o: ffp.c
-	$(CC) -c ffp.c $(CFLAGS) $(LFLAGS)
+	$(CC) -c ffp.c $(CFLAGS) $(OPT) $(LFLAGS)
 
 mr.o: mr.c
-	$(CC) -c mr.c $(CFLAGS) $(LFLAGS)
+	$(CC) -c mr.c $(CFLAGS) $(OPT) $(LFLAGS) -static
 
+bench_debug_je: bench_debug.o ffp_debug.o mr_debug.o
+	$(CC) $(CFLAGS) $(DEBUG) bench_debug.o ffp_debug.o mr_debug.o $(LFLAGS) $(JEFLAGS) -o bench_debug_je
+
+bench_debug: bench_debug.o ffp_debug.o mr_debug.o
+	$(CC) $(CFLAGS) $(DEBUG) bench_debug.o ffp_debug.o mr_debug.o $(LFLAGS) -o bench_debug_glc
+
+bench_debug.o: bench.c ffp.h
+	$(CC) -c bench.c $(CFLAGS) $(DEBUG) $(LFLAGS) -o bench_debug.o
+
+ffp_debug.o: ffp.c
+	$(CC) -c ffp.c $(CFLAGS) $(DEBUG) $(LFLAGS) -o ffp_debug.o
+
+mr_debug.o: mr.c
+	$(CC) -c mr.c $(CFLAGS) $(DEBUG) $(LFLAGS) -static -o mr_debug.o
 clean:
-	rm *.o bench_*
+	rm -f *.o bench_*
