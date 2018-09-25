@@ -12,10 +12,10 @@
 
 unsigned long long limit_sf,
                    limit_r,
-                   limit_i,
-                   test_size;
+                   limit_i;
 
-int n_threads;
+int test_size,
+    n_threads;
 
 struct ffp_head head;
 
@@ -34,7 +34,8 @@ void *prepare_worker(void *entry_point)
 void *bench_worker(void *entry_point)
 {
 	int thread_id = ffp_init_thread(head);
-	for(int i=0; i<test_size/n_threads; i++){
+	int thread_limit = test_size/n_threads;
+	for(int i=0; i<thread_limit; i++){
 		unsigned long long value = nrand48(entry_point);
 		if(value < limit_sf){
 #if FFP_DEBUG

@@ -213,11 +213,13 @@ int mark_invalid(struct ffp_node *cnode)
 {
 	struct ffp_node *expect = valid_ptr(atomic_load_explicit(
 				&(cnode->ans.next),
-				memory_order_seq_cst));
-	while(!atomic_compare_exchange_weak(
+				memory_order_consume));
+	while(!atomic_compare_exchange_weak_explicit(
 				&(cnode->ans.next),
 				&expect,
-				(struct ffp_node *)((uintptr_t) expect | 1))){
+				(struct ffp_node *)((uintptr_t) expect | 1),
+				memory_order_acq_rel,
+				memory_order_consume)){
 		if((uintptr_t) expect & 1)
 			return 0;
 	}
@@ -228,14 +230,16 @@ int force_cas(struct ffp_node *node, struct ffp_node *hash)
 {
 	struct ffp_node *expect = atomic_load_explicit(
 			&(node->ans.next),
-			memory_order_seq_cst);
+			memory_order_consume);
 	do{
 		if(((uintptr_t) expect & 1) == 1)
 			return 0;
-	}while(!atomic_compare_exchange_weak(
+	}while(!atomic_compare_exchange_weak_explicit(
 				&(node->ans.next),
 				&expect,
-				hash));
+				hash,
+				memory_order_acq_rel,
+				memory_order_consume));
 	return 1;
 }
 
@@ -255,13 +259,13 @@ int find_node(
 		*last_valid = &((*hnode)->hash.array[pos]);
 		*nodeptr = atomic_load_explicit(
 				*last_valid,
-				memory_order_seq_cst);
+				memory_order_consume);
 		iter = *nodeptr;
 	}
 	else{
 		iter = atomic_load_explicit(
 				&((*hnode)->hash.array[pos]),
-				memory_order_seq_cst);
+				memory_order_consume);
 	}
 	if(count)
 		*count = 0;
@@ -279,7 +283,7 @@ int find_node(
 		}
 		struct ffp_node *tmp = atomic_load_explicit(
 				&(iter->ans.next),
-				memory_order_seq_cst);
+				memory_order_consume);
 		if(!get_flag(tmp)){
 			if(iter->ans.hash == hash){
 				*nodeptr = iter;
@@ -307,19 +311,19 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 {
 	struct ffp_node *iter = atomic_load_explicit(
 			&(cnode->ans.next),
-			memory_order_seq_cst),
+			memory_order_consume),
 			*valid_after;
 	while(get_flag(iter)){
 		valid_after = valid_ptr(iter);
 		iter = atomic_load_explicit(
 				&(valid_after->ans.next),
-				memory_order_seq_cst);
+				memory_order_consume);
 	}
 	iter = valid_after;
 	while(iter->type != HASH)
 		iter = valid_ptr(atomic_load_explicit(
 					&(iter->ans.next),
-					memory_order_seq_cst));
+					memory_order_consume));
 	if(iter == hnode){
 		int pos = get_bucket(
 				cnode->ans.hash,
@@ -328,12 +332,12 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 		struct ffp_node * _Atomic *valid_before = &(hnode->hash.array[pos]),
 				*valid_before_next = atomic_load_explicit(
 						valid_before,
-						memory_order_seq_cst);
+						memory_order_consume);
 		iter = valid_before_next;
 		while(iter !=cnode && iter->type == ANS){
 			struct ffp_node *tmp = atomic_load_explicit(
 					&(iter->ans.next),
-					memory_order_seq_cst);
+					memory_order_consume);
 			if(!get_flag(tmp)){
 				valid_before = &(iter->ans.next);
 				valid_before_next = valid_ptr(tmp);
@@ -344,10 +348,12 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 			}
 		}
 		if(iter == cnode){
-			if(atomic_compare_exchange_strong(
+			if(atomic_compare_exchange_strong_explicit(
 						valid_before,
 						&valid_before_next,
-						valid_after))
+						valid_after,
+						memory_order_acq_rel,
+						memory_order_consume))
 				return;
 			else
 				return make_invisible(cnode, hnode);
@@ -393,10 +399,12 @@ struct ffp_node *search_insert(
 						HASH_SIZE,
 						hnode->hash.hash_pos + hnode->hash.size,
 						hnode);
-		if(atomic_compare_exchange_strong(
+		if(atomic_compare_exchange_strong_explicit(
 					last_valid,
 					&cnode,
-					new_hash)){
+					new_hash,
+					memory_order_acq_rel,
+					memory_order_consume)){
 			int pos = get_bucket(
 					hash,
 					hnode->hash.hash_pos,
@@ -404,11 +412,12 @@ struct ffp_node *search_insert(
 			adjust_chain_nodes(
 					atomic_load_explicit(
 						&(hnode->hash.array[pos]),
-						memory_order_seq_cst),
+						memory_order_consume),
 					new_hash);
-			atomic_store(
+			atomic_store_explicit(
 					&(hnode->hash.array[pos]),
-					new_hash);
+					new_hash,
+					memory_order_release);
 			return search_insert(
 					new_hash,
 					hash,
@@ -423,10 +432,12 @@ struct ffp_node *search_insert(
 				hash,
 				value,
 				hnode);
-		if(atomic_compare_exchange_strong(
+		if(atomic_compare_exchange_strong_explicit(
 					last_valid,
 					&cnode,
-					new_node))
+					new_node,
+					memory_order_acq_rel,
+					memory_order_consume))
 			return new_node;
 		else
 			ffp_free(new_node);
@@ -443,7 +454,7 @@ void adjust_chain_nodes(struct ffp_node *cnode, struct ffp_node *hnode)
 {
 	struct ffp_node *tmp = atomic_load_explicit(
 			&(cnode->ans.next),
-			memory_order_seq_cst),
+			memory_order_consume),
 			*next = valid_ptr(tmp);
 	if(next != hnode)
 		adjust_chain_nodes(next, hnode);
@@ -465,12 +476,12 @@ void adjust_node(
 	struct ffp_node * _Atomic *current_valid = &(hnode->hash.array[pos]),
 			*expected_value = valid_ptr(atomic_load_explicit(
 					current_valid,
-					memory_order_seq_cst)),
+					memory_order_consume)),
 			*iter = expected_value;
 	while(iter->type == ANS){
 		struct ffp_node *tmp = atomic_load_explicit(
 				&(iter->ans.next),
-				memory_order_seq_cst);
+				memory_order_consume);
 		if(!get_flag(tmp)){
 			current_valid = &(iter->ans.next);
 			expected_value = valid_ptr(tmp);
@@ -487,19 +498,21 @@ void adjust_node(
 					HASH_SIZE,
 					hnode->hash.hash_pos + hnode->hash.size,
 					hnode);
-			if(atomic_compare_exchange_strong(
+			if(atomic_compare_exchange_strong_explicit(
 						current_valid,
 						&expected_value,
-						new_hash)){
+						new_hash,
+						memory_order_acq_rel,
+						memory_order_consume)){
 				adjust_chain_nodes(
 						atomic_load_explicit(
 							&(hnode->hash.array[pos]),
-							memory_order_seq_cst),
+							memory_order_consume),
 						new_hash);
 				atomic_store_explicit(
 						&(hnode->hash.array[pos]),
 						new_hash,
-						memory_order_seq_cst);
+						memory_order_release);
 				return adjust_node(
 						cnode,
 						new_hash);
@@ -511,10 +524,12 @@ void adjust_node(
 		else{
 			if(!force_cas(cnode, hnode))
 				return;
-			if(atomic_compare_exchange_strong(
+			if(atomic_compare_exchange_strong_explicit(
 						current_valid,
 						&expected_value,
-						cnode)){
+						cnode,
+						memory_order_acq_rel,
+						memory_order_consume)){
 				if(get_flag(atomic_load_explicit(
 								&(cnode->ans.next),
 								memory_order_seq_cst)))
