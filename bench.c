@@ -41,8 +41,7 @@ void *bench_worker(void *entry_point)
 #if FFP_DEBUG
 			assert((unsigned long long)ffp_search(head, value, thread_id)==value);
 #else
-			if((unsigned long long)ffp_search(head, value, thread_id)!=value)
-				fprintf(stderr, "failiure: item not match %lld\n", value);
+			ffp_search(head, value, thread_id);
 #endif
 		}
 		else if(value < limit_r){
@@ -55,8 +54,7 @@ void *bench_worker(void *entry_point)
 #if FFP_DEBUG
 			assert(ffp_search(head, value, thread_id) == NULL);
 #else
-			if(ffp_search(head, value, thread_id)!=NULL)
-				fprintf(stderr, "failiure: found item %lld\n", value);
+			ffp_search(head, value, thread_id);
 #endif
 		}
 	}
