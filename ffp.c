@@ -31,7 +31,7 @@ struct ffp_node_hash {
 };
 
 struct ffp_node_ans {
-	unsigned long long hash;
+	size_t hash;
 	void *value;
 	struct ffp_node * _Atomic next;
 };
@@ -47,11 +47,11 @@ struct ffp_node {
 
 void search_remove(
 		struct ffp_node *hnode,
-		unsigned long long hash);
+		size_t hash);
 
 struct ffp_node *search_insert(
 		struct ffp_node *hnode,
-		unsigned long long hash,
+		size_t hash,
 		void *value);
 
 void adjust_chain_nodes(
@@ -64,7 +64,7 @@ void adjust_node(
 
 void *search_node(
 		struct ffp_node *hnode,
-		unsigned long long hash);
+		size_t hash);
 
 struct ffp_node *create_hash_node(
 		int size,
@@ -77,11 +77,11 @@ struct ffp_node *create_hash_node(
 void *debug_search_chain(
 		struct ffp_node *cnode,
 		struct ffp_node *hnode,
-		unsigned long long hash);
+		size_t hash);
 
 void *debug_search_hash(
 		struct ffp_node *hnode,
-		unsigned long long hash);
+		size_t hash);
 
 #endif
 
@@ -107,7 +107,7 @@ void ffp_end_thread(struct ffp_head head, int thread_id)
 
 void *ffp_search(
 		struct ffp_head head,
-		unsigned long long hash,
+		size_t hash,
 		int thread_id)
 {
 	return search_node(head.entry_hash, hash);
@@ -115,7 +115,7 @@ void *ffp_search(
 
 struct ffp_node *ffp_insert(
 		struct ffp_head head,
-		unsigned long long hash,
+		size_t hash,
 		void *value,
 		int thread_id)
 {
@@ -127,7 +127,7 @@ struct ffp_node *ffp_insert(
 
 void ffp_remove(
 		struct ffp_head head,
-		unsigned long long hash,
+		size_t hash,
 		int thread_id)
 {
 	return search_remove(
@@ -141,7 +141,7 @@ void ffp_remove(
 
 void *ffp_debug_search(
 		struct ffp_head head,
-		unsigned long long hash,
+		size_t hash,
 		int thread_id)
 {
 	return debug_search_hash(head.entry_hash, hash);
@@ -162,7 +162,7 @@ void ffp_free(void *ptr)
 }
 
 struct ffp_node *create_ans_node(
-		unsigned long long hash,
+		size_t hash,
 		void *value,
 		struct ffp_node *next)
 {
@@ -192,7 +192,7 @@ struct ffp_node *create_hash_node(
 }
 
 int get_bucket(
-		unsigned long long hash,
+		size_t hash,
 		int hash_pos,
 		int size)
 {
@@ -244,7 +244,7 @@ int force_cas(struct ffp_node *node, struct ffp_node *hash)
 }
 
 int find_node(
-		unsigned long long hash,
+		size_t hash,
 		struct ffp_node **hnode,
 		struct ffp_node **nodeptr,
 		struct ffp_node * _Atomic **last_valid,
@@ -372,7 +372,7 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 
 void search_remove(
 		struct ffp_node *hnode,
-		unsigned long long hash)
+		size_t hash)
 {
 	struct ffp_node *cnode;
 	if(find_node(hash, &hnode, &cnode, NULL, NULL)){
@@ -386,7 +386,7 @@ void search_remove(
 
 struct ffp_node *search_insert(
 		struct ffp_node *hnode,
-		unsigned long long hash,
+		size_t hash,
 		void *value)
 {
 	struct ffp_node *cnode,
@@ -549,7 +549,7 @@ void adjust_node(
 
 void *search_node(
 		struct ffp_node *hnode,
-		unsigned long long hash)
+		size_t hash)
 {
 	struct ffp_node *cnode;
 	if(find_node(hash, &hnode, &cnode, NULL, NULL))
@@ -564,7 +564,7 @@ void *search_node(
 
 void *debug_search_hash(
 		struct ffp_node *hnode,
-		unsigned long long hash)
+		size_t hash)
 {
 	int pos = get_bucket(
 			hash,
@@ -584,7 +584,7 @@ void *debug_search_hash(
 void *debug_search_chain(
 		struct ffp_node *cnode,
 		struct ffp_node *hnode,
-		unsigned long long hash)
+		size_t hash)
 {
 	if(cnode->ans.hash == hash){
 		if(get_flag(atomic_load_explicit(

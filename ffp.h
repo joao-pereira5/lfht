@@ -1,3 +1,5 @@
+#include <stddef.h>
+
 #ifndef FFP_DEBUG
 #define FFP_DEBUG 0
 #endif
@@ -21,18 +23,18 @@ void ffp_end_thread(
 
 void *ffp_search(
 		struct ffp_head head,
-		unsigned long long hash,
+		size_t hash,
 		int thread_id);
 
 struct ffp_node *ffp_insert(
 		struct ffp_head head,
-		unsigned long long hash,
+		size_t hash,
 		void *value,
 		int thread_id);
 
 void ffp_remove(
 		struct ffp_head head,
-		unsigned long long hash,
+		size_t hash,
 		int thread_id);
 
 //debug interface
@@ -41,7 +43,7 @@ void ffp_remove(
 
 void *ffp_debug_search(
 		struct ffp_head head,
-		unsigned long long hash,
+		size_t hash,
 		int thread_id);
 
 #endif
