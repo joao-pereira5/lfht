@@ -113,7 +113,7 @@ int main(int argc, char **argv)
 	unsigned short **seed = malloc(n_threads*sizeof(unsigned short*));
 	head = init_ffp(n_threads);
 	for(int i=0; i<n_threads; i++)
-		seed[i] = malloc(3*sizeof(unsigned short));
+		seed[i] = aligned_alloc(64, 64);
 	if(limit_r!=0){
 		for(int i=0; i<n_threads; i++){
 			seed[i][0] = i;
