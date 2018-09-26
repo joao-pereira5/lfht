@@ -309,15 +309,17 @@ int find_node(
 
 void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 {
-	struct ffp_node *iter = atomic_load_explicit(
-			&(cnode->ans.next),
-			memory_order_consume),
-			*valid_after;
-	while(get_flag(iter)){
-		valid_after = valid_ptr(iter);
+	struct ffp_node *iter,
+			*valid_after = valid_ptr(atomic_load_explicit(
+						&(cnode->ans.next),
+						memory_order_consume));
+	while(valid_after->type == ANS){
 		iter = atomic_load_explicit(
 				&(valid_after->ans.next),
 				memory_order_consume);
+		if(!get_flag(iter))
+			break;
+		valid_after = valid_ptr(iter);
 	}
 	iter = valid_after;
 	while(iter->type != HASH)
