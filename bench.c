@@ -10,6 +10,8 @@
 
 #endif
 
+#define NRAND_MAX (1 << 31)
+
 unsigned long long limit_sf,
                    limit_r,
                    limit_i;
@@ -99,9 +101,9 @@ int main(int argc, char **argv)
 	                   searches_found = atoi(argv[5]),
 	                   searches_not_found = atoi(argv[6]),
 	                   total = inserts + removes + searches_found + searches_not_found;
-	limit_sf = RAND_MAX*searches_found/total;
-	limit_r = limit_sf + RAND_MAX*removes/total;
-	limit_i = limit_r + RAND_MAX*inserts/total;
+	limit_sf = NRAND_MAX*searches_found/total;
+	limit_r = limit_sf + NRAND_MAX*removes/total;
+	limit_i = limit_r + NRAND_MAX*inserts/total;
 	struct timespec start_monoraw,
 			end_monoraw,
 			start_process,
