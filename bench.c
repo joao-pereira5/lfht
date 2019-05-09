@@ -10,7 +10,7 @@
 
 #endif
 
-#define NRAND_MAX (1 << 31)
+#define LRAND_MAX (1 << 31)
 
 unsigned long long limit_sf,
                    limit_r,
@@ -25,7 +25,9 @@ void *prepare_worker(void *entry_point)
 {
 	int thread_id = ffp_init_thread(head);
 	for(int i=0; i<test_size/n_threads; i++){
-		unsigned long long value = nrand48(entry_point);
+		unsigned long long value;
+		lrand48_r(entry_point, (long int *) &value);
+		printf("%llx\n", value);
 		if(value < limit_r)
 			ffp_insert(head, value, (void*)value, thread_id);
 	}
@@ -38,7 +40,8 @@ void *bench_worker(void *entry_point)
 	int thread_id = ffp_init_thread(head);
 	int thread_limit = test_size/n_threads;
 	for(int i=0; i<thread_limit; i++){
-		unsigned long long value = nrand48(entry_point);
+		unsigned long long value;
+		lrand48_r(entry_point, (long int *) &value);
 		if(value < limit_sf){
 #if FFP_DEBUG
 			assert((unsigned long long)ffp_search(head, value, thread_id)==value);
@@ -68,7 +71,8 @@ void *test_worker(void *entry_point)
 {
 	int thread_id = ffp_init_thread(head);
 	for(int i=0; i<test_size/n_threads; i++){
-		unsigned long long value = nrand48(entry_point);
+		unsigned long long value;
+		lrand48_r(entry_point, (long int *) &value);
 		if(value < limit_sf){
 			assert((unsigned long long)ffp_debug_search(head, value, thread_id)==value);
 		}
@@ -101,24 +105,22 @@ int main(int argc, char **argv)
 	                   searches_found = atoi(argv[5]),
 	                   searches_not_found = atoi(argv[6]),
 	                   total = inserts + removes + searches_found + searches_not_found;
-	limit_sf = NRAND_MAX*searches_found/total;
-	limit_r = limit_sf + NRAND_MAX*removes/total;
-	limit_i = limit_r + NRAND_MAX*inserts/total;
+	limit_sf = LRAND_MAX*searches_found/total;
+	limit_r = limit_sf + LRAND_MAX*removes/total;
+	limit_i = limit_r + LRAND_MAX*inserts/total;
 	struct timespec start_monoraw,
 			end_monoraw,
 			start_process,
 			end_process;
 	double time;
 	pthread_t *threads = malloc(n_threads*sizeof(pthread_t));
-	unsigned short **seed = malloc(n_threads*sizeof(unsigned short*));
+	struct drand48_data **seed = malloc(n_threads*sizeof(struct drand48_data *));
 	head = init_ffp(n_threads);
 	for(int i=0; i<n_threads; i++)
 		seed[i] = aligned_alloc(64, 64);
 	if(limit_r!=0){
 		for(int i=0; i<n_threads; i++){
-			seed[i][0] = i;
-			seed[i][1] = i;
-			seed[i][2] = i;
+			srand48_r(i, seed[i]);
 			pthread_create(&threads[i], NULL, prepare_worker, seed[i]);
 		}
 		for(int i=0;i<n_threads; i++){
@@ -129,9 +131,7 @@ int main(int argc, char **argv)
 	clock_gettime(CLOCK_MONOTONIC_RAW, &start_monoraw);
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start_process);
 	for(int i=0; i<n_threads; i++){
-		seed[i][0] = i;
-		seed[i][1] = i;
-		seed[i][2] = i;
+		srand48_r(i, seed[i]);
 		pthread_create(&threads[i], NULL, bench_worker, seed[i]);
 	}
 	for(int i=0; i<n_threads; i++)
@@ -146,9 +146,7 @@ int main(int argc, char **argv)
 #if FFP_DEBUG
 	if(argc == 8 && argv[7][0]=='t'){
 		for(int i=0; i<n_threads; i++){
-			seed[i][0] = i;
-			seed[i][1] = i;
-			seed[i][2] = i;
+			srand48_r(i, seed[i]);
 			pthread_create(&threads[i], NULL, test_worker, seed[i]);
 		}
 		for(int i=0; i<n_threads; i++){
