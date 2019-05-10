@@ -27,7 +27,6 @@ void *prepare_worker(void *entry_point)
 	for(int i=0; i<test_size/n_threads; i++){
 		unsigned long long value;
 		lrand48_r(entry_point, (long int *) &value);
-		printf("%llx\n", value);
 		if(value < limit_r)
 			ffp_insert(head, value, (void*)value, thread_id);
 	}
