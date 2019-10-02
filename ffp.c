@@ -151,22 +151,12 @@ void *ffp_debug_search(
 
 //auxiliary
 
-void *ffp_malloc(size_t size)
-{
-	return malloc(size);
-}
-
-void ffp_free(void *ptr)
-{
-	free(ptr);
-}
-
 struct ffp_node *create_ans_node(
 		size_t hash,
 		void *value,
 		struct ffp_node *next)
 {
-	struct ffp_node *node = ffp_malloc(sizeof(struct ffp_node));
+	struct ffp_node *node = malloc(sizeof(struct ffp_node));
 	node->type = ANS;
 	node->ans.hash = hash;
 	node->ans.value = value;
@@ -179,7 +169,7 @@ struct ffp_node *create_hash_node(
 		int hash_pos,
 		struct ffp_node *prev)
 {
-	struct ffp_node *node = ffp_malloc(
+	struct ffp_node *node = malloc(
 			sizeof(struct ffp_node) + (1<<size)*sizeof(struct ffp_node *));
 	node->type = HASH;
 	node->hash.size = size;
@@ -426,7 +416,7 @@ struct ffp_node *search_insert(
 					value);
 		}
 		else{
-			ffp_free(new_hash);
+			free(new_hash);
 		}
 	}
 	else{
@@ -442,7 +432,7 @@ struct ffp_node *search_insert(
 					memory_order_consume))
 			return new_node;
 		else
-			ffp_free(new_node);
+			free(new_node);
 	}
 	return search_insert(
 			hnode,
@@ -520,7 +510,7 @@ void adjust_node(
 						new_hash);
 			}
 			else{
-				ffp_free(new_hash);
+				free(new_hash);
 			}
 		}
 		else{
