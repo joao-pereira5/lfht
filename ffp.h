@@ -1,48 +1,48 @@
 #include <stddef.h>
 
-#ifndef FFP_DEBUG
-#define FFP_DEBUG 0
+#ifndef LFHT_DEBUG
+#define LFHT_DEBUG 0
 #endif
 
-struct ffp_head {
-	struct ffp_node *entry_hash;
+struct lfht_head {
+	struct lfht_node *entry_hash;
 	struct mr_entry *thread_array;
 	int max_threads;
 };
 
 
-struct ffp_head init_ffp(
+struct lfht_head init_lfht(
 		int max_threads);
 
-int ffp_init_thread(
-		struct ffp_head head);
+int lfht_init_thread(
+		struct lfht_head head);
 
-void ffp_end_thread(
-		struct ffp_head head,
+void lfht_end_thread(
+		struct lfht_head head,
 		int thread_id);
 
-void *ffp_search(
-		struct ffp_head head,
+void *lfht_search(
+		struct lfht_head head,
 		size_t hash,
 		int thread_id);
 
-struct ffp_node *ffp_insert(
-		struct ffp_head head,
+struct lfht_node *lfht_insert(
+		struct lfht_head head,
 		size_t hash,
 		void *value,
 		int thread_id);
 
-void ffp_remove(
-		struct ffp_head head,
+void lfht_remove(
+		struct lfht_head head,
 		size_t hash,
 		int thread_id);
 
 //debug interface
 
-#if FFP_DEBUG
+#if LFHT_DEBUG
 
-void *ffp_debug_search(
-		struct ffp_head head,
+void *lfht_debug_search(
+		struct lfht_head head,
 		size_t hash,
 		int thread_id);
 

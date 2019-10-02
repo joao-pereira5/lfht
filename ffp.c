@@ -4,7 +4,7 @@
 #include <ffp.h>
 #include <mr.h>
 
-#if FFP_DEBUG
+#if LFHT_DEBUG
 
 #include <stdio.h>
 #include <assert.h>
@@ -21,100 +21,100 @@
 
 enum ntype {HASH, ANS};
 
-struct ffp_node;
+struct lfht_node;
 
-struct ffp_node_hash {
+struct lfht_node_hash {
 	int size;
 	int hash_pos;
-	struct ffp_node *prev;
-	struct ffp_node * _Atomic array[0];
+	struct lfht_node *prev;
+	struct lfht_node * _Atomic array[0];
 };
 
-struct ffp_node_ans {
+struct lfht_node_ans {
 	size_t hash;
 	void *value;
-	struct ffp_node * _Atomic next;
+	struct lfht_node * _Atomic next;
 };
 
-struct ffp_node {
+struct lfht_node {
 	enum ntype type;
 	union {
-		struct ffp_node_hash hash;
-		struct ffp_node_ans ans;
+		struct lfht_node_hash hash;
+		struct lfht_node_ans ans;
 	};
 };
 
 
 void search_remove(
-		struct ffp_node *hnode,
+		struct lfht_node *hnode,
 		size_t hash);
 
-struct ffp_node *search_insert(
-		struct ffp_node *hnode,
+struct lfht_node *search_insert(
+		struct lfht_node *hnode,
 		size_t hash,
 		void *value);
 
 void adjust_chain_nodes(
-		struct ffp_node *cnode,
-		struct ffp_node *hnode);
+		struct lfht_node *cnode,
+		struct lfht_node *hnode);
 
 void adjust_node(
-		struct ffp_node *cnode,
-		struct ffp_node *hnode);
+		struct lfht_node *cnode,
+		struct lfht_node *hnode);
 
 void *search_node(
-		struct ffp_node *hnode,
+		struct lfht_node *hnode,
 		size_t hash);
 
-struct ffp_node *create_hash_node(
+struct lfht_node *create_hash_node(
 		int size,
 		int hash_pos,
-		struct ffp_node *prev);
+		struct lfht_node *prev);
 
 // debug search
-#if FFP_DEBUG
+#if LFHT_DEBUG
 
 void *debug_search_chain(
-		struct ffp_node *cnode,
-		struct ffp_node *hnode,
+		struct lfht_node *cnode,
+		struct lfht_node *hnode,
 		size_t hash);
 
 void *debug_search_hash(
-		struct ffp_node *hnode,
+		struct lfht_node *hnode,
 		size_t hash);
 
 #endif
 
 //interface
 
-struct ffp_head init_ffp(int max_threads){
-	struct ffp_head head;
+struct lfht_head init_lfht(int max_threads){
+	struct lfht_head head;
 	head.entry_hash = create_hash_node(HASH_SIZE, 0, NULL);
 	head.thread_array = init_mr(max_threads);
 	head.max_threads = max_threads;
 	return head;
 }
 
-int ffp_init_thread(struct ffp_head head)
+int lfht_init_thread(struct lfht_head head)
 {
 	return mr_thread_acquire(head.thread_array, head.max_threads);
 }
 
-void ffp_end_thread(struct ffp_head head, int thread_id)
+void lfht_end_thread(struct lfht_head head, int thread_id)
 {
 	return mr_thread_release(head.thread_array, thread_id);
 }
 
-void *ffp_search(
-		struct ffp_head head,
+void *lfht_search(
+		struct lfht_head head,
 		size_t hash,
 		int thread_id)
 {
 	return search_node(head.entry_hash, hash);
 }
 
-struct ffp_node *ffp_insert(
-		struct ffp_head head,
+struct lfht_node *lfht_insert(
+		struct lfht_head head,
 		size_t hash,
 		void *value,
 		int thread_id)
@@ -125,8 +125,8 @@ struct ffp_node *ffp_insert(
 			value);
 }
 
-void ffp_remove(
-		struct ffp_head head,
+void lfht_remove(
+		struct lfht_head head,
 		size_t hash,
 		int thread_id)
 {
@@ -137,10 +137,10 @@ void ffp_remove(
 
 //debug interface
 
-#if FFP_DEBUG
+#if LFHT_DEBUG
 
-void *ffp_debug_search(
-		struct ffp_head head,
+void *lfht_debug_search(
+		struct lfht_head head,
 		size_t hash,
 		int thread_id)
 {
@@ -151,12 +151,12 @@ void *ffp_debug_search(
 
 //auxiliary
 
-struct ffp_node *create_ans_node(
+struct lfht_node *create_ans_node(
 		size_t hash,
 		void *value,
-		struct ffp_node *next)
+		struct lfht_node *next)
 {
-	struct ffp_node *node = malloc(sizeof(struct ffp_node));
+	struct lfht_node *node = malloc(sizeof(struct lfht_node));
 	node->type = ANS;
 	node->ans.hash = hash;
 	node->ans.value = value;
@@ -164,13 +164,13 @@ struct ffp_node *create_ans_node(
 	return node;
 }
 
-struct ffp_node *create_hash_node(
+struct lfht_node *create_hash_node(
 		int size,
 		int hash_pos,
-		struct ffp_node *prev)
+		struct lfht_node *prev)
 {
-	struct ffp_node *node = malloc(
-			sizeof(struct ffp_node) + (1<<size)*sizeof(struct ffp_node *));
+	struct lfht_node *node = malloc(
+			sizeof(struct lfht_node) + (1<<size)*sizeof(struct lfht_node *));
 	node->type = HASH;
 	node->hash.size = size;
 	node->hash.hash_pos = hash_pos;
@@ -189,25 +189,25 @@ int get_bucket(
 	return (hash >> hash_pos) & ((1 << size) - 1);
 }
 
-struct ffp_node *valid_ptr(struct ffp_node *next)
+struct lfht_node *valid_ptr(struct lfht_node *next)
 {
-	return (struct ffp_node *) ((uintptr_t) next & ~1);
+	return (struct lfht_node *) ((uintptr_t) next & ~1);
 }
 
-unsigned get_flag(struct ffp_node *ptr)
+unsigned get_flag(struct lfht_node *ptr)
 {
 	return (uintptr_t) ptr & 1;
 }
 
-int mark_invalid(struct ffp_node *cnode)
+int mark_invalid(struct lfht_node *cnode)
 {
-	struct ffp_node *expect = valid_ptr(atomic_load_explicit(
+	struct lfht_node *expect = valid_ptr(atomic_load_explicit(
 				&(cnode->ans.next),
 				memory_order_consume));
 	while(!atomic_compare_exchange_weak_explicit(
 				&(cnode->ans.next),
 				&expect,
-				(struct ffp_node *)((uintptr_t) expect | 1),
+				(struct lfht_node *)((uintptr_t) expect | 1),
 				memory_order_acq_rel,
 				memory_order_consume)){
 		if((uintptr_t) expect & 1)
@@ -216,9 +216,9 @@ int mark_invalid(struct ffp_node *cnode)
 	return 1;
 }
 
-int force_cas(struct ffp_node *node, struct ffp_node *hash)
+int force_cas(struct lfht_node *node, struct lfht_node *hash)
 {
-	struct ffp_node *expect = atomic_load_explicit(
+	struct lfht_node *expect = atomic_load_explicit(
 			&(node->ans.next),
 			memory_order_consume);
 	do{
@@ -235,12 +235,12 @@ int force_cas(struct ffp_node *node, struct ffp_node *hash)
 
 int find_node(
 		size_t hash,
-		struct ffp_node **hnode,
-		struct ffp_node **nodeptr,
-		struct ffp_node * _Atomic **last_valid,
+		struct lfht_node **hnode,
+		struct lfht_node **nodeptr,
+		struct lfht_node * _Atomic **last_valid,
 		int *count)
 {
-	struct ffp_node *iter;
+	struct lfht_node *iter;
 	int pos = get_bucket(
 			hash,
 			(*hnode)->hash.hash_pos,
@@ -271,7 +271,7 @@ int find_node(
 					last_valid,
 					count);
 		}
-		struct ffp_node *tmp = atomic_load_explicit(
+		struct lfht_node *tmp = atomic_load_explicit(
 				&(iter->ans.next),
 				memory_order_consume);
 		if(!get_flag(tmp)){
@@ -297,9 +297,9 @@ int find_node(
 	return 0;
 }
 
-void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
+void make_invisible(struct lfht_node *cnode, struct lfht_node *hnode)
 {
-	struct ffp_node *iter,
+	struct lfht_node *iter,
 			*valid_after = valid_ptr(atomic_load_explicit(
 						&(cnode->ans.next),
 						memory_order_consume));
@@ -321,13 +321,13 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 				cnode->ans.hash,
 				hnode->hash.hash_pos,
 				hnode->hash.size);
-		struct ffp_node * _Atomic *valid_before = &(hnode->hash.array[pos]),
+		struct lfht_node * _Atomic *valid_before = &(hnode->hash.array[pos]),
 				*valid_before_next = atomic_load_explicit(
 						valid_before,
 						memory_order_consume);
 		iter = valid_before_next;
 		while(iter !=cnode && iter->type == ANS){
-			struct ffp_node *tmp = atomic_load_explicit(
+			struct lfht_node *tmp = atomic_load_explicit(
 					&(iter->ans.next),
 					memory_order_consume);
 			if(!get_flag(tmp)){
@@ -363,10 +363,10 @@ void make_invisible(struct ffp_node *cnode, struct ffp_node *hnode)
 //remove functions
 
 void search_remove(
-		struct ffp_node *hnode,
+		struct lfht_node *hnode,
 		size_t hash)
 {
-	struct ffp_node *cnode;
+	struct lfht_node *cnode;
 	if(find_node(hash, &hnode, &cnode, NULL, NULL)){
 		if(mark_invalid(cnode))
 			make_invisible(cnode, hnode);
@@ -376,18 +376,18 @@ void search_remove(
 
 //insertion functions
 
-struct ffp_node *search_insert(
-		struct ffp_node *hnode,
+struct lfht_node *search_insert(
+		struct lfht_node *hnode,
 		size_t hash,
 		void *value)
 {
-	struct ffp_node *cnode,
+	struct lfht_node *cnode,
 			* _Atomic *last_valid;
 	int count;
 	if(find_node(hash, &hnode, &cnode, &last_valid, &count))
 		return cnode;
 	if(count >= MAX_NODES){
-		struct ffp_node *new_hash = create_hash_node(
+		struct lfht_node *new_hash = create_hash_node(
 						HASH_SIZE,
 						hnode->hash.hash_pos + hnode->hash.size,
 						hnode);
@@ -420,7 +420,7 @@ struct ffp_node *search_insert(
 		}
 	}
 	else{
-		struct ffp_node *new_node = create_ans_node(
+		struct lfht_node *new_node = create_ans_node(
 				hash,
 				value,
 				hnode);
@@ -442,9 +442,9 @@ struct ffp_node *search_insert(
 
 //expansion functions
 
-void adjust_chain_nodes(struct ffp_node *cnode, struct ffp_node *hnode)
+void adjust_chain_nodes(struct lfht_node *cnode, struct lfht_node *hnode)
 {
-	struct ffp_node *tmp = atomic_load_explicit(
+	struct lfht_node *tmp = atomic_load_explicit(
 			&(cnode->ans.next),
 			memory_order_consume),
 			*next = valid_ptr(tmp);
@@ -457,21 +457,21 @@ void adjust_chain_nodes(struct ffp_node *cnode, struct ffp_node *hnode)
 }
 
 void adjust_node(
-		struct ffp_node *cnode,
-		struct ffp_node *hnode)
+		struct lfht_node *cnode,
+		struct lfht_node *hnode)
 {
 	int counter = 0;
 	int pos = get_bucket(
 			cnode->ans.hash,
 			hnode->hash.hash_pos,
 			hnode->hash.size);
-	struct ffp_node * _Atomic *current_valid = &(hnode->hash.array[pos]),
+	struct lfht_node * _Atomic *current_valid = &(hnode->hash.array[pos]),
 			*expected_value = valid_ptr(atomic_load_explicit(
 					current_valid,
 					memory_order_consume)),
 			*iter = expected_value;
 	while(iter->type == ANS){
-		struct ffp_node *tmp = atomic_load_explicit(
+		struct lfht_node *tmp = atomic_load_explicit(
 				&(iter->ans.next),
 				memory_order_consume);
 		if(!get_flag(tmp)){
@@ -486,7 +486,7 @@ void adjust_node(
 	}
 	if(iter == hnode){
 		if(counter >=MAX_NODES){
-			struct ffp_node *new_hash = create_hash_node(
+			struct lfht_node *new_hash = create_hash_node(
 					HASH_SIZE,
 					hnode->hash.hash_pos + hnode->hash.size,
 					hnode);
@@ -540,10 +540,10 @@ void adjust_node(
 // searching functions
 
 void *search_node(
-		struct ffp_node *hnode,
+		struct lfht_node *hnode,
 		size_t hash)
 {
-	struct ffp_node *cnode;
+	struct lfht_node *cnode;
 	if(find_node(hash, &hnode, &cnode, NULL, NULL))
 		return cnode->ans.value;
 	else
@@ -552,17 +552,17 @@ void *search_node(
 
 // debug searching
 
-#if FFP_DEBUG
+#if LFHT_DEBUG
 
 void *debug_search_hash(
-		struct ffp_node *hnode,
+		struct lfht_node *hnode,
 		size_t hash)
 {
 	int pos = get_bucket(
 			hash,
 			hnode->hash.hash_pos,
 			hnode->hash.size);
-	struct ffp_node *next_node = atomic_load_explicit(
+	struct lfht_node *next_node = atomic_load_explicit(
 			&(hnode->hash.array[pos]),
 			memory_order_seq_cst);
 	if(next_node == hnode)
@@ -574,8 +574,8 @@ void *debug_search_hash(
 }
 
 void *debug_search_chain(
-		struct ffp_node *cnode,
-		struct ffp_node *hnode,
+		struct lfht_node *cnode,
+		struct lfht_node *hnode,
 		size_t hash)
 {
 	if(cnode->ans.hash == hash){
@@ -586,7 +586,7 @@ void *debug_search_chain(
 		else
 			return cnode->ans.value;
 	}
-	struct ffp_node *next_node = valid_ptr(atomic_load_explicit(
+	struct lfht_node *next_node = valid_ptr(atomic_load_explicit(
 				&(cnode->ans.next),
 				memory_order_seq_cst));
 	if(next_node == hnode)

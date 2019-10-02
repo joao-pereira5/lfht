@@ -3,7 +3,7 @@ CFLAGS=-std=gnu11 -Wall -I. -fPIC
 AR=ar
 OPT=-O3
 LFLAGS=-shared
-DEBUG=-g -ggdb -Og -DFFP_DEBUG=1
+DEBUG=-g -ggdb -Og -DLFHT_DEBUG=1
 
 default: libffp.a
 debug: libffp_debug.a libffp_debug.so
