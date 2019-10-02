@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdatomic.h>
-#include <ffp.h>
+#include <lfht.h>
 #include <mr.h>
 
 #if LFHT_DEBUG

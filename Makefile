@@ -5,30 +5,30 @@ OPT=-O3
 LFLAGS=-shared
 DEBUG=-g -ggdb -Og -DLFHT_DEBUG=1
 
-default: libffp.a
-debug: libffp_debug.a libffp_debug.so
-all: libffp.a libffp.so
+default: liblfht.a
+debug: liblfht_debug.a liblfht_debug.so
+all: liblfht.a liblfht.so
 
-libffp.so: mr.o ffp.o
-	$(CC) mr.o ffp.o $(CFLAGS) $(OPT) $(LFLAGS) -o libffp.so
+liblfht.so: mr.o lfht.o
+	$(CC) mr.o lfht.o $(CFLAGS) $(OPT) $(LFLAGS) -o liblfht.so
 
-libffp.a: ffp.o mr.o
-	$(AR) rcu libffp.a ffp.o mr.o
+liblfht.a: lfht.o mr.o
+	$(AR) rcu liblfht.a lfht.o mr.o
 
-ffp.o: ffp.c
-	$(CC) -c ffp.c $(CFLAGS) $(OPT) $(LFLAGS)
+lfht.o: lfht.c
+	$(CC) -c lfht.c $(CFLAGS) $(OPT) $(LFLAGS)
 
 mr.o: mr.c
 	$(CC) -c mr.c $(CFLAGS) $(OPT) $(LFLAGS)
 
-libffp_debug.so:
-	$(CC) mr_debug.o ffp_debug.o mr.h $(CFLAGS) $(DEBUG) $(LFLAGS) -o libffp_debug.so
+liblfht_debug.so:
+	$(CC) mr_debug.o lfht_debug.o mr.h $(CFLAGS) $(DEBUG) $(LFLAGS) -o liblfht_debug.so
 
-libffp_debug.a: ffp_debug.o mr_debug.o
-	$(AR) rcu libffp_debug.a ffp_debug.o mr_debug.o
+liblfht_debug.a: lfht_debug.o mr_debug.o
+	$(AR) rcu liblfht_debug.a lfht_debug.o mr_debug.o
 
-ffp_debug.o: ffp.c
-	$(CC) -c ffp.c $(CFLAGS) $(DEBUG) $(LFLAGS) -o ffp_debug.o
+lfht_debug.o: lfht.c
+	$(CC) -c lfht.c $(CFLAGS) $(DEBUG) $(LFLAGS) -o lfht_debug.o
 
 mr_debug.o: mr.c
 	$(CC) -c mr.c $(CFLAGS) $(DEBUG) $(LFLAGS) -o mr_debug.o
