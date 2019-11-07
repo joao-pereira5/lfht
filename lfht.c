@@ -87,51 +87,51 @@ void *debug_search_hash(
 
 //interface
 
-struct lfht_head init_lfht(int max_threads){
-	struct lfht_head head;
-	head.entry_hash = create_hash_node(HASH_SIZE, 0, NULL);
-	head.thread_array = init_mr(max_threads);
-	head.max_threads = max_threads;
+struct lfht_head *init_lfht(int max_threads){
+	struct lfht_head *head = malloc(sizeof(struct lfht_head));
+	head->entry_hash = create_hash_node(HASH_SIZE, 0, NULL);
+	head->thread_array = init_mr(max_threads);
+	head->max_threads = max_threads;
 	return head;
 }
 
-int lfht_init_thread(struct lfht_head head)
+int lfht_init_thread(struct lfht_head *head)
 {
-	return mr_thread_acquire(head.thread_array, head.max_threads);
+	return mr_thread_acquire(head->thread_array, head->max_threads);
 }
 
-void lfht_end_thread(struct lfht_head head, int thread_id)
+void lfht_end_thread(struct lfht_head *head, int thread_id)
 {
-	return mr_thread_release(head.thread_array, thread_id);
+	return mr_thread_release(head->thread_array, thread_id);
 }
 
 void *lfht_search(
-		struct lfht_head head,
+		struct lfht_head *head,
 		size_t hash,
 		int thread_id)
 {
-	return search_node(head.entry_hash, hash);
+	return search_node(head->entry_hash, hash);
 }
 
 struct lfht_node *lfht_insert(
-		struct lfht_head head,
+		struct lfht_head *head,
 		size_t hash,
 		void *value,
 		int thread_id)
 {
 	return search_insert(
-			head.entry_hash,
+			head->entry_hash,
 			hash,
 			value);
 }
 
 void lfht_remove(
-		struct lfht_head head,
+		struct lfht_head *head,
 		size_t hash,
 		int thread_id)
 {
 	return search_remove(
-			head.entry_hash,
+			head->entry_hash,
 			hash);
 }
 
@@ -140,11 +140,11 @@ void lfht_remove(
 #if LFHT_DEBUG
 
 void *lfht_debug_search(
-		struct lfht_head head,
+		struct lfht_head *head,
 		size_t hash,
 		int thread_id)
 {
-	return debug_search_hash(head.entry_hash, hash);
+	return debug_search_hash(head->entry_hash, hash);
 }
 
 #endif
