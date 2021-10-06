@@ -26,13 +26,13 @@ void *lfht_search(
 		size_t hash,
 		int thread_id);
 
-struct lfht_node *lfht_insert(
+void *lfht_insert(
 		struct lfht_head *head,
 		size_t hash,
 		void *value,
 		int thread_id);
 
-void lfht_remove(
+void *lfht_remove(
 		struct lfht_head *head,
 		size_t hash,
 		int thread_id);

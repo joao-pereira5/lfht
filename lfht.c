@@ -45,7 +45,7 @@ struct lfht_node {
 };
 
 
-void search_remove(
+struct lfht_node *search_remove(
 		struct lfht_node *hnode,
 		size_t hash);
 
@@ -113,26 +113,28 @@ void *lfht_search(
 	return search_node(head->entry_hash, hash);
 }
 
-struct lfht_node *lfht_insert(
+void *lfht_insert(
 		struct lfht_head *head,
 		size_t hash,
 		void *value,
 		int thread_id)
 {
-	return search_insert(
+	struct lfht_node *cnode = search_insert(
 			head->entry_hash,
 			hash,
 			value);
+	return cnode->ans.value;
 }
 
-void lfht_remove(
+void *lfht_remove(
 		struct lfht_head *head,
 		size_t hash,
 		int thread_id)
 {
-	return search_remove(
+	struct lfht_node *cnode = search_remove(
 			head->entry_hash,
 			hash);
+	return cnode->ans.value;
 }
 
 //debug interface
@@ -362,16 +364,18 @@ void make_invisible(struct lfht_node *cnode, struct lfht_node *hnode)
 
 //remove functions
 
-void search_remove(
+struct lfht_node *search_remove(
 		struct lfht_node *hnode,
 		size_t hash)
 {
 	struct lfht_node *cnode;
 	if(find_node(hash, &hnode, &cnode, NULL, NULL)){
-		if(mark_invalid(cnode))
+		if(mark_invalid(cnode)){
 			make_invisible(cnode, hnode);
+			return cnode;
+		}
 	}
-	return;
+	return NULL;
 }
 
 //insertion functions
