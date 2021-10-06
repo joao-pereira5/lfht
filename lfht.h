@@ -1,3 +1,7 @@
+
+#ifndef __LFHT_H__
+#define __LFHT_H__
+
 #include <stddef.h>
 
 #ifndef LFHT_DEBUG
@@ -39,11 +43,11 @@ void *lfht_remove(
 
 //debug interface
 
-#if LFHT_DEBUG
 
 void *lfht_debug_search(
 		struct lfht_head *head,
 		size_t hash,
 		int thread_id);
 
-#endif
+#endif // __LFHT_H__
+
