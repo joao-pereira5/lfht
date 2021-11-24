@@ -79,7 +79,6 @@ int expand(
 		int thread_id,
 		struct lfht_node **new_hash,
 		struct lfht_node *hnode,
-		struct lfht_node *tail_nxt,
 		size_t hash,
 		_Atomic(struct lfht_node *) *tail_nxt_ptr);
 
@@ -143,27 +142,11 @@ void *debug_search_hash(
 // defined by the header API
 
 struct lfht_head *init_lfht(int max_threads) {
-	struct lfht_head *lfht = malloc(sizeof(struct lfht_head));
-
-	lfht->entry_hash = create_hash_node(ROOT_HASH_SIZE, 0, NULL);
-	lfht->max_threads = max_threads;
-	lfht->root_hash_size = ROOT_HASH_SIZE;
-	lfht->hash_size = HASH_SIZE;
-	lfht->max_chain_nodes = MAX_NODES;
-#if LFHT_DEBUG
-	lfht->stats = (struct lfht_stats**)malloc(max_threads*sizeof(struct lfht_stats*));
-	for(int i = 0; i < max_threads; i++) {
-		lfht->stats[i] = (struct lfht_stats*)aligned_alloc(CACHE_SIZE, CACHE_SIZE);
-		lfht->stats[i]->compression_counter = 0;
-		lfht->stats[i]->compression_rollback_counter = 0;
-		lfht->stats[i]->expansion_counter = 0;
-		lfht->stats[i]->unfreeze_counter = 0;
-		lfht->stats[i]->freeze_counter = 0;
-		lfht->stats[i]->max_retry_counter = 0;
-		lfht->stats[i]->max_depth = 0;
-	}
-#endif
-	return lfht;
+	return init_lfht_explicit(
+			max_threads,
+			ROOT_HASH_SIZE,
+			HASH_SIZE,
+			MAX_NODES);
 }
 
 struct lfht_head *init_lfht_explicit(
@@ -179,16 +162,15 @@ struct lfht_head *init_lfht_explicit(
 	lfht->hash_size = hash_size;
 	lfht->max_chain_nodes = max_chain_nodes;
 #if LFHT_DEBUG
-	lfht->stats = (struct lfht_stats**)malloc(max_threads*sizeof(struct lfht_stats*));
-	for(int i = 0; i < max_threads; i++) {
-		lfht->stats[i] = (struct lfht_stats*)aligned_alloc(CACHE_SIZE, CACHE_SIZE);
-		lfht->stats[i]->compression_counter = 0;
-		lfht->stats[i]->compression_rollback_counter = 0;
-		lfht->stats[i]->expansion_counter = 0;
-		lfht->stats[i]->unfreeze_counter = 0;
-		lfht->stats[i]->freeze_counter = 0;
-		lfht->stats[i]->max_retry_counter = 0;
-		lfht->stats[i]->max_depth = 0;
+	lfht->stats = (_Atomic(struct lfht_stats*) *)
+		malloc(max_threads*sizeof(_Atomic(struct lfht_stats*)));
+
+	for(int i = 0; i < lfht->max_threads; i++) {
+		atomic_init(&(lfht->stats[i]), NULL);
+	}
+
+	if(lfht->max_threads <= 1) {
+		lfht_init_thread(lfht);
 	}
 #endif
 	return lfht;
@@ -205,7 +187,35 @@ void free_lfht(struct lfht_head *lfht) {
 
 int lfht_init_thread(struct lfht_head *lfht)
 {
+#if LFHT_DEBUG
+	struct lfht_stats *s = (struct lfht_stats *) aligned_alloc(CACHE_SIZE, CACHE_SIZE);
+	s->compression_counter = 0;
+	s->compression_rollback_counter = 0;
+	s->expansion_counter = 0;
+	s->unfreeze_counter = 0;
+	s->freeze_counter = 0;
+	s->max_retry_counter = 0;
+	s->operations = 0;
+	s->api_calls = 0;
+	s->max_depth = 0;
+
+	for(int i = 0; i < lfht->max_threads; i++) {
+		struct lfht_stats *expect = NULL;
+		if (atomic_compare_exchange_weak_explicit(
+				&(lfht->stats[i]),
+				&expect,
+				s,
+				memory_order_acq_rel,
+				memory_order_consume)) {
+			return i;
+		}
+	}
+
+	free(s);
+	return -1;
+#else
 	return 0;
+#endif
 }
 
 void lfht_end_thread(struct lfht_head *lfht, int thread_id)
@@ -217,6 +227,10 @@ void *lfht_search(
 		size_t hash,
 		int thread_id)
 {
+#if LFHT_DEBUG
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->api_calls++;
+#endif
 	return search_node(
 			lfht,
 			thread_id,
@@ -230,6 +244,10 @@ struct lfht_node *lfht_insert(
 		void *value,
 		int thread_id)
 {
+#if LFHT_DEBUG
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->api_calls++;
+#endif
 	return search_insert(
 			lfht,
 			thread_id,
@@ -243,6 +261,10 @@ void lfht_remove(
 		size_t hash,
 		int thread_id)
 {
+#if LFHT_DEBUG
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->api_calls++;
+#endif
 	return search_remove(
 			lfht,
 			thread_id,
@@ -505,22 +527,12 @@ int find_node(
 		_Atomic(struct lfht_node *) **last_valid_atomic,
 		unsigned int *count)
 {
-#if LFHT_DEBUG
-	int trial = 0;
-#endif
-
 start: ;
 #if LFHT_DEBUG
 	assert(nodeptr);
 	assert(hnode);
 	assert(*hnode);
 	assert((*hnode)->type == HASH);
-
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	trial++;
-	if (stats->max_retry_counter < trial) {
-		stats->max_retry_counter = trial;
-	}
 #endif
 
 	_Atomic(struct lfht_node *) *atomic_head =
@@ -598,7 +610,8 @@ void make_unreachable(
 		struct lfht_node *hnode)
 {
 #if LFHT_DEBUG
-	int trial = 0;
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->operations++;
 #endif
 
 start: ;
@@ -608,11 +621,7 @@ start: ;
 	assert(cnode->type == LEAF);
 	assert(hnode->type == HASH);
 
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	trial++;
-	if (stats->max_retry_counter < trial) {
-		stats->max_retry_counter = trial;
-	}
+	stats->max_retry_counter++;
 #endif
 	struct lfht_node *iter;
 	struct lfht_node *nxt = valid_ptr(get_next(cnode));
@@ -733,16 +742,13 @@ struct lfht_node *search_insert(
 		void *value)
 {
 #if LFHT_DEBUG
-	int trial = 0;
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->operations++;
 #endif
 
 start: ;
 #if LFHT_DEBUG
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	trial++;
-	if (stats->max_retry_counter < trial) {
-		stats->max_retry_counter = trial;
-	}
+	stats->max_retry_counter++;
 #endif
 
 	struct lfht_node *cnode;
@@ -774,7 +780,7 @@ start: ;
 	if(count >= MAX_NODES) {
 		struct lfht_node *new_hash;
 		// add new level to tail of chain
-		if(expand(lfht, thread_id, &new_hash, hnode, cnode, hash, last_valid_atomic)) {
+		if(expand(lfht, thread_id, &new_hash, hnode, hash, last_valid_atomic)) {
 			// level added
 			hnode = new_hash;
 		}
@@ -809,7 +815,8 @@ void compress(
 		size_t hash)
 {
 #if LFHT_DEBUG
-	int trial = 0;
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->operations++;
 #endif
 
 start: ;
@@ -817,11 +824,7 @@ start: ;
 	assert(target);
 	assert(target->type == HASH);
 
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	trial++;
-	if (stats->max_retry_counter < trial) {
-		stats->max_retry_counter = trial;
-	}
+	stats->max_retry_counter++;
 #endif
 
 	if(target->hash.prev == NULL || !is_empty(target)) {
@@ -962,7 +965,7 @@ int unfreeze(
 	}
 
 #if LFHT_DEBUG
-	struct lfht_stats* stats = lfht->stats[thread_id];
+	struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
 	stats->unfreeze_counter++;
 #endif
 	return 1;
@@ -979,16 +982,11 @@ void abort_compress(
 		_Atomic(struct lfht_node *) *atomic_bucket)
 {
 	struct lfht_node *expect;
-	struct lfht_node *compression_node = atomic_load_explicit(
-			atomic_bucket,
-			memory_order_consume);
 #if LFHT_DEBUG
-	assert(compression_node);
 	assert(target);
-	// no other thread must interfere with
-	// this thread's compression procedure
-	assert(is_compression_node(compression_node));
 	assert(target->type == HASH);
+	assert(freeze);
+	assert(is_compression_node(freeze));
 #endif
 
 	// point all buckets to target
@@ -1013,7 +1011,7 @@ void abort_compress(
 			target,
 			memory_order_release);
 #if LFHT_DEBUG
-	struct lfht_stats* stats = lfht->stats[thread_id];
+	struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
 	stats->compression_rollback_counter++;
 #endif
 }
@@ -1025,16 +1023,15 @@ int expand(
 		int thread_id,
 		struct lfht_node **new_hash,
 		struct lfht_node *hnode,
-		struct lfht_node *tail_nxt,
 		size_t hash,
 		_Atomic(struct lfht_node *) *tail_nxt_ptr)
 {
 #if LFHT_DEBUG
-	assert(tail_nxt);
 	assert(hnode);
-	assert(tail_nxt->type == HASH);
 	assert(hnode->type == HASH);
 #endif
+
+	struct lfht_node *exp = hnode;
 
 	*new_hash = create_hash_node(
 			HASH_SIZE,
@@ -1044,7 +1041,7 @@ int expand(
 	// add new hash level to tail of chain
 	if(atomic_compare_exchange_strong_explicit(
 				tail_nxt_ptr,
-				&tail_nxt,
+				&exp,
 				*new_hash,
 				memory_order_acq_rel,
 				memory_order_consume)) {
@@ -1079,7 +1076,7 @@ int expand(
 				memory_order_acq_rel,
 				memory_order_consume)) ;
 #if LFHT_DEBUG
-		struct lfht_stats* stats = lfht->stats[thread_id];
+		struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
 		stats->expansion_counter++;
 		int level = (*new_hash)->hash.hash_pos / (*new_hash)->hash.size;
 		if(stats->max_depth < level) {
@@ -1129,7 +1126,8 @@ void adjust_node(
 		struct lfht_node *hnode)
 {
 #if LFHT_DEBUG
-	int trial = 0;
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->operations++;
 #endif
 
 start: ;
@@ -1139,11 +1137,7 @@ start: ;
 	assert(cnode->type == LEAF);
 	assert(hnode->type == HASH);
 
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	trial++;
-	if (stats->max_retry_counter < trial) {
-		stats->max_retry_counter = trial;
-	}
+	stats->max_retry_counter++;
 #endif
 	unsigned int count = 0;
 	size_t hash = cnode->leaf.hash;
@@ -1199,7 +1193,7 @@ start: ;
 	// expansion required?
 	if(count >= MAX_NODES) {
 		struct lfht_node *new_hash;
-		if(expand(lfht, thread_id, &new_hash, hnode, expect, hash, current_valid)) {
+		if(expand(lfht, thread_id, &new_hash, hnode, hash, current_valid)) {
 			// adjust node at new level
 			hnode = new_hash;
 		}
