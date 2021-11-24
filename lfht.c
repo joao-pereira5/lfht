@@ -694,12 +694,6 @@ start: ;
 					nxt,
 					memory_order_acq_rel,
 					memory_order_consume)) {
-
-			if(observed_bucket == prev_atomic) {
-				// our removed node was the last of the chain
-				compress(lfht, thread_id, hnode, cnode->leaf.hash);
-			}
-
 			return;
 		}
 
