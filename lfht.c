@@ -4,8 +4,8 @@
 #include <lfht.h>
 
 #if LFHT_DEBUG
-#include <stdio.h>
 #include <assert.h>
+#include <pthread.h>
 #define CYCLE_THRESHOLD 10000000
 #endif
 
@@ -22,6 +22,7 @@ struct lfht_node_hash {
 	int size;
 	int hash_pos;
 	struct lfht_node *prev;
+	_Atomic(int) counter;
 	_Atomic(struct lfht_node *) array[0];
 };
 
@@ -79,7 +80,6 @@ int expand(
 		int thread_id,
 		struct lfht_node **new_hash,
 		struct lfht_node *hnode,
-		struct lfht_node *tail_nxt,
 		size_t hash,
 		_Atomic(struct lfht_node *) *tail_nxt_ptr);
 
@@ -117,6 +117,8 @@ unsigned is_invalid(struct lfht_node *ptr);
 
 unsigned is_compression_node(struct lfht_node *node);
 
+unsigned is_root(struct lfht_node *n);
+
 unsigned is_empty(struct lfht_node *hnode);
 
 // debug functions
@@ -143,27 +145,11 @@ void *debug_search_hash(
 // defined by the header API
 
 struct lfht_head *init_lfht(int max_threads) {
-	struct lfht_head *lfht = malloc(sizeof(struct lfht_head));
-
-	lfht->entry_hash = create_hash_node(ROOT_HASH_SIZE, 0, NULL);
-	lfht->max_threads = max_threads;
-	lfht->root_hash_size = ROOT_HASH_SIZE;
-	lfht->hash_size = HASH_SIZE;
-	lfht->max_chain_nodes = MAX_NODES;
-#if LFHT_DEBUG
-	lfht->stats = (struct lfht_stats**)malloc(max_threads*sizeof(struct lfht_stats*));
-	for(int i = 0; i < max_threads; i++) {
-		lfht->stats[i] = (struct lfht_stats*)aligned_alloc(CACHE_SIZE, CACHE_SIZE);
-		lfht->stats[i]->compression_counter = 0;
-		lfht->stats[i]->compression_rollback_counter = 0;
-		lfht->stats[i]->expansion_counter = 0;
-		lfht->stats[i]->unfreeze_counter = 0;
-		lfht->stats[i]->freeze_counter = 0;
-		lfht->stats[i]->max_retry_counter = 0;
-		lfht->stats[i]->max_depth = 0;
-	}
-#endif
-	return lfht;
+	return init_lfht_explicit(
+			max_threads,
+			ROOT_HASH_SIZE,
+			HASH_SIZE,
+			MAX_NODES);
 }
 
 struct lfht_head *init_lfht_explicit(
@@ -179,16 +165,15 @@ struct lfht_head *init_lfht_explicit(
 	lfht->hash_size = hash_size;
 	lfht->max_chain_nodes = max_chain_nodes;
 #if LFHT_DEBUG
-	lfht->stats = (struct lfht_stats**)malloc(max_threads*sizeof(struct lfht_stats*));
-	for(int i = 0; i < max_threads; i++) {
-		lfht->stats[i] = (struct lfht_stats*)aligned_alloc(CACHE_SIZE, CACHE_SIZE);
-		lfht->stats[i]->compression_counter = 0;
-		lfht->stats[i]->compression_rollback_counter = 0;
-		lfht->stats[i]->expansion_counter = 0;
-		lfht->stats[i]->unfreeze_counter = 0;
-		lfht->stats[i]->freeze_counter = 0;
-		lfht->stats[i]->max_retry_counter = 0;
-		lfht->stats[i]->max_depth = 0;
+	lfht->stats = (_Atomic(struct lfht_stats*) *)
+		malloc(max_threads*sizeof(_Atomic(struct lfht_stats*)));
+
+	for(int i = 0; i < lfht->max_threads; i++) {
+		atomic_init(&(lfht->stats[i]), NULL);
+	}
+
+	if(lfht->max_threads <= 1) {
+		lfht_init_thread(lfht);
 	}
 #endif
 	return lfht;
@@ -205,7 +190,35 @@ void free_lfht(struct lfht_head *lfht) {
 
 int lfht_init_thread(struct lfht_head *lfht)
 {
+#if LFHT_DEBUG
+	struct lfht_stats *s = (struct lfht_stats *) aligned_alloc(CACHE_SIZE, CACHE_SIZE);
+	s->compression_counter = 0;
+	s->compression_rollback_counter = 0;
+	s->expansion_counter = 0;
+	s->unfreeze_counter = 0;
+	s->freeze_counter = 0;
+	s->max_retry_counter = 0;
+	s->operations = 0;
+	s->api_calls = 0;
+	s->max_depth = 0;
+
+	for(int i = 0; i < lfht->max_threads; i++) {
+		struct lfht_stats *expect = NULL;
+		if (atomic_compare_exchange_weak_explicit(
+				&(lfht->stats[i]),
+				&expect,
+				s,
+				memory_order_acq_rel,
+				memory_order_consume)) {
+			return i;
+		}
+	}
+
+	free(s);
+	return -1;
+#else
 	return 0;
+#endif
 }
 
 void lfht_end_thread(struct lfht_head *lfht, int thread_id)
@@ -217,6 +230,10 @@ void *lfht_search(
 		size_t hash,
 		int thread_id)
 {
+#if LFHT_DEBUG
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->api_calls++;
+#endif
 	return search_node(
 			lfht,
 			thread_id,
@@ -230,6 +247,10 @@ struct lfht_node *lfht_insert(
 		void *value,
 		int thread_id)
 {
+#if LFHT_DEBUG
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->api_calls++;
+#endif
 	return search_insert(
 			lfht,
 			thread_id,
@@ -243,6 +264,10 @@ void lfht_remove(
 		size_t hash,
 		int thread_id)
 {
+#if LFHT_DEBUG
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->api_calls++;
+#endif
 	return search_remove(
 			lfht,
 			thread_id,
@@ -319,6 +344,10 @@ struct lfht_node *create_hash_node(
 	for(int i=0; i < 1<<size; i++) {
 		atomic_init(&(node->hash.array[i]), node);
 	}
+
+	// initialize counter
+	atomic_init(&(node->hash.counter), 1);
+
 	return node;
 }
 
@@ -370,6 +399,75 @@ struct lfht_node *get_next(
 	return nxt;
 }
 
+// returns: compressed level?
+int try_compress(
+		struct lfht_head *lfht,
+		int thread_id,
+		struct lfht_node *hnode,
+		size_t hash) {
+
+	if(is_root(hnode)) {
+		return 0;
+	}
+
+	_Atomic(int) *counter = &(hnode->hash.counter);
+	int observed_counter = atomic_fetch_sub_explicit(
+			counter,
+			1,
+			memory_order_seq_cst);
+#if LFHT_DEBUG
+	assert(observed_counter >= 1);
+#endif
+
+	if(observed_counter != 1) {
+		return 0;
+	}
+	compress(lfht, thread_id, hnode, hash);
+
+	return 1;
+}
+
+unsigned is_removed(struct lfht_node *hnode) {
+	if(is_root(hnode)) {
+		return 0;
+	}
+
+	_Atomic(int) *counter = &(hnode->hash.counter);
+	int observed_counter = atomic_load_explicit(
+			counter,
+			memory_order_seq_cst);
+	return observed_counter;
+}
+
+int try_increment(
+		struct lfht_head *lfht,
+		int thread_id,
+		struct lfht_node *hnode,
+		size_t hash) {
+	if(is_root(hnode)) {
+		return 1;
+	}
+
+	_Atomic(int) *counter = &(hnode->hash.counter);
+	int observed_counter = atomic_load_explicit(
+			counter,
+			memory_order_seq_cst);
+
+	while(observed_counter > 0) {
+		if(atomic_compare_exchange_strong_explicit(
+					counter,
+					&observed_counter,
+					observed_counter + 1,
+					memory_order_acq_rel,
+					memory_order_consume)) {
+			return 1;
+		}
+	}
+
+	compress(lfht, thread_id, hnode, hash);
+	return 0;
+}
+
 // we do not use an "is_valid" field.
 // to verify if a node is valid, the least significant bit
 // of the *next field is used (the address, not the node it
@@ -405,6 +503,10 @@ unsigned is_invalid(struct lfht_node *ptr)
 unsigned is_compression_node(struct lfht_node *node)
 {
 	return node->type == FREEZE || node->type == UNFREEZE;
+}
+
+unsigned is_root(struct lfht_node *n) {
+	return n->type == HASH && n->hash.prev == NULL;
 }
 
 unsigned is_empty(struct lfht_node *hnode)
@@ -451,6 +553,7 @@ int mark_invalid(struct lfht_node *cnode)
 			return 0;
 		}
 	}
+
 	return 1;
 }
 
@@ -505,10 +608,6 @@ int find_node(
 		_Atomic(struct lfht_node *) **last_valid_atomic,
 		unsigned int *count)
 {
-#if LFHT_DEBUG
-	int trial = 0;
-#endif
-
 start: ;
 #if LFHT_DEBUG
 	assert(nodeptr);
@@ -516,11 +615,8 @@ start: ;
 	assert(*hnode);
 	assert((*hnode)->type == HASH);
 
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	trial++;
-	if (stats->max_retry_counter < trial) {
-		stats->max_retry_counter = trial;
-	}
+	struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
+	stats->max_retry_counter++;
 #endif
 
 	_Atomic(struct lfht_node *) *atomic_head =
@@ -532,15 +628,6 @@ start: ;
 
 	struct lfht_node *head = iter;
 	*nodeptr = head;
-
-	if(is_compression_node(head)) {
-		// skip compression node
-		iter = valid_ptr(get_next(iter));
-#if LFHT_DEBUG
-		assert(iter);
-		assert(iter->type == HASH);
-#endif
-	}
 
 	if(last_valid_atomic) {
 		*last_valid_atomic = atomic_head;
@@ -563,10 +650,6 @@ start: ;
 			*hnode = iter;
 			goto start;
 		}
-#if LFHT_DEBUG
-		assert(!is_compression_node(head));
-		assert(iter->type == LEAF);
-#endif
 
 		struct lfht_node *nxt_iter = get_next(iter);
 		if(!is_invalid(nxt_iter)) {
@@ -598,7 +681,8 @@ void make_unreachable(
 		struct lfht_node *hnode)
 {
 #if LFHT_DEBUG
-	int trial = 0;
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->operations++;
 #endif
 
 start: ;
@@ -608,11 +692,7 @@ start: ;
 	assert(cnode->type == LEAF);
 	assert(hnode->type == HASH);
 
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	trial++;
-	if (stats->max_retry_counter < trial) {
-		stats->max_retry_counter = trial;
-	}
+	stats->max_retry_counter++;
 #endif
 	struct lfht_node *iter;
 	struct lfht_node *nxt = valid_ptr(get_next(cnode));
@@ -648,15 +728,10 @@ start: ;
 			hnode->hash.size);
 	_Atomic(struct lfht_node *) *observed_bucket = &(hnode->hash.array[pos]);
 	_Atomic(struct lfht_node *) *prev_atomic = observed_bucket;
-	struct lfht_node *prev = atomic_load_explicit(
+	struct lfht_node *bucket = atomic_load_explicit(
 			prev_atomic,
 			memory_order_consume);
-
-	if(is_compression_node(prev)) {
-		// skip compression node
-		prev = valid_ptr(get_next(prev));
-		return;
-	}
+	struct lfht_node *prev = bucket;
 
 	// let's find the last valid node before our target
 	iter = prev;
@@ -672,30 +747,25 @@ start: ;
 		iter = valid_ptr(iter);
 	}
 
-	if(iter == cnode) {
-		// try to disconnect our target from chain
-#if LFHT_DEBUG
-		if (prev->type ==HASH && nxt->type == HASH) {
-			assert(prev == nxt);
-		}
-#endif
-		if(atomic_compare_exchange_strong_explicit(
-					prev_atomic,
-					&prev,
-					nxt,
-					memory_order_acq_rel,
-					memory_order_consume)) {
-
-			if(observed_bucket == prev_atomic) {
-				// our removed node was the last of the chain
-				compress(lfht, thread_id, hnode, cnode->leaf.hash);
-			}
-
-			return;
-		}
-
-		goto start;
+	if(iter != cnode) {
+		return;
 	}
+
+	// try to disconnect our target from chain
+	int is_bucket_empty = prev_atomic == observed_bucket && nxt == hnode;
+	if(atomic_compare_exchange_strong_explicit(
+				prev_atomic,
+				&prev,
+				nxt,
+				memory_order_acq_rel,
+				memory_order_consume)) {
+		if(is_bucket_empty) {
+			try_compress(lfht, thread_id, hnode, cnode->leaf.hash);
+		}
+		return;
+	}
+
+	goto start;
 }
 
 // remove functions
@@ -733,16 +803,13 @@ struct lfht_node *search_insert(
 		void *value)
 {
 #if LFHT_DEBUG
-	int trial = 0;
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->operations++;
 #endif
 
 start: ;
 #if LFHT_DEBUG
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	trial++;
-	if (stats->max_retry_counter < trial) {
-		stats->max_retry_counter = trial;
-	}
+	stats->max_retry_counter++;
 #endif
 
 	struct lfht_node *cnode;
@@ -754,31 +821,21 @@ start: ;
 		return cnode;
 	}
 
-	if(cnode->type == FREEZE && !unfreeze(lfht, thread_id, hnode, hash)) {
-#if LFHT_DEBUG
-		assert(count == 0);
-		assert(cnode->leaf.next == hnode);
-#endif
-		if(hnode->hash.prev != NULL) {
-			// starting to insert a node in an already deleted
-			// hash level will cause an infinite cycle
-			hnode = hnode->hash.prev;
-		}
-		goto start;
-	}
-#if LFHT_DEBUG
-	assert(cnode->type != UNFREEZE);
-#endif
-
 	// expand hash level
 	if(count >= MAX_NODES) {
 		struct lfht_node *new_hash;
 		// add new level to tail of chain
-		if(expand(lfht, thread_id, &new_hash, hnode, cnode, hash, last_valid_atomic)) {
+		if(expand(lfht, thread_id, &new_hash, hnode, hash, last_valid_atomic)) {
 			// level added
 			hnode = new_hash;
 		}
 
+		goto start;
+	}
+
+	int is_bucket_empty = last_valid_atomic == get_atomic_bucket(hash, hnode) && cnode == hnode;
+	if(is_bucket_empty && !try_increment(lfht, thread_id, hnode, hash)) {
+		hnode = hnode->hash.prev;
 		goto start;
 	}
 
@@ -796,6 +853,11 @@ start: ;
 		return new_node;
 	}
 
+	if(is_bucket_empty && try_compress(lfht, thread_id, hnode, hash)) {
+		// level collapsed after compression
+		hnode = hnode->hash.prev;
+	}
+
 	free(new_node);
 	goto start;
 }
@@ -808,231 +870,72 @@ void compress(
 		struct lfht_node *target,
 		size_t hash)
 {
+	if(is_root(target)) {
+		return;
+	}
 #if LFHT_DEBUG
-	int trial = 0;
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->operations++;
 #endif
 
 start: ;
 #if LFHT_DEBUG
+	assert(target->hash.prev != NULL); // the root hash always has 1 value above in the counter
 	assert(target);
 	assert(target->type == HASH);
 
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	trial++;
-	if (stats->max_retry_counter < trial) {
-		stats->max_retry_counter = trial;
-	}
+	stats->max_retry_counter++;
 #endif
 
-	if(target->hash.prev == NULL || !is_empty(target)) {
-		// we cannot compress the root hash or a non empty hash
-		return;
-	}
-
-	struct lfht_node *freeze = create_freeze_node(target);
-	struct lfht_node *expect;
+	struct lfht_node *expect = target;
 	struct lfht_node *prev_hash = target->hash.prev;
 	_Atomic(struct lfht_node *) *atomic_bucket =
 		get_atomic_bucket(hash, prev_hash);
 
-	// try to place freeze node in front of bucket,
-	// pointing to target hash
-	expect = target;
-	if(!atomic_compare_exchange_strong_explicit(
-				atomic_bucket,
-				&expect,
-				freeze,
-				memory_order_acq_rel,
-				memory_order_consume)) {
-		free(freeze);
+	if (!atomic_compare_exchange_strong_explicit(
+			atomic_bucket,
+			&expect,
+			prev_hash,
+			memory_order_acq_rel,
+			memory_order_consume)) {
 		return;
 	}
-#if LFHT_DEBUG
-	stats->freeze_counter++;
-#endif
 
-	// freeze empty buckets
-	for(int i = 0; i < (1<<target->hash.size); i++) {
-		_Atomic(struct lfht_node *) *nxt_atomic_bucket =
-			&(target->hash.array[i]);
-
-		expect = target;
-		if(!atomic_compare_exchange_strong_explicit(
-					nxt_atomic_bucket,
-					&expect,
-					freeze,
-					memory_order_acq_rel,
-					memory_order_consume)) {
-			// bucket not empty
-
-			// WARNING: be careful with the ABA problem
-			// if we free() freeze node here, some other
-			// thread might have it in local storage
-			//
-			//free(freeze);
-
-			abort_compress(lfht, thread_id, target, freeze, atomic_bucket);
-			goto start;
-		}
-	}
-
-	// removing hash from the trie (commit)
-	expect = freeze;
-	if(!atomic_compare_exchange_strong_explicit(
-				atomic_bucket,
-				&expect,
-				prev_hash,
-				memory_order_acq_rel,
-				memory_order_consume)) {
-
-		// WARNING: be careful with the ABA problem
-		// if we free() freeze node here, some other
-		// thread might have it in local storage
-		//
-		//free(freeze);
-
-		abort_compress(lfht, thread_id, target, freeze, atomic_bucket);
-		goto start;
-	}
-
-	// compressed level
 #if LFHT_DEBUG
 	stats->compression_counter++;
 #endif
-	// try to compress previous level
+
 	target = target->hash.prev;
+
+	if(is_root(target)) {
+		return;
+	}
+
+	int observed_counter = atomic_fetch_sub_explicit(
+			&(target->hash.counter),
+			1,
+			memory_order_seq_cst);
+#if LFHT_DEBUG
+	assert(observed_counter >= 1);
+#endif
+	if(observed_counter != 1) {
+		return;
+	}
+
 	goto start;
 }
 
-// notify compressing thread to abort compression
-int unfreeze(
-		struct lfht_head *lfht,
-		int thread_id,
-		struct lfht_node *target,
-		size_t hash)
-{
-#if LFHT_DEBUG
-	assert(target);
-	assert(target->type == HASH);
-#endif
-	_Atomic(struct lfht_node *) *atomic_bucket =
-		get_atomic_bucket(hash, target->hash.prev);
-
-	struct lfht_node *head = atomic_load_explicit(
-			atomic_bucket,
-			memory_order_consume);
-
-	if(head == target) {
-		// compression rolled back successfully
-		return 1;
-	}
-
-	if(head->type == UNFREEZE) {
-		return get_next(head) == target;
-	}
-
-	if(head->type != FREEZE || get_next(head) != target) {
-		// level already removed
-		return 0;
-	}
-
-	struct lfht_node *unfreeze = create_unfreeze_node(target);
-
-	// try to place unfreeze node in front of bucket,
-	// pointing to freeze node
-	if(!atomic_compare_exchange_strong_explicit(
-				atomic_bucket,
-				&head,
-				unfreeze,
-				memory_order_acq_rel,
-				memory_order_consume)) {
-		// already compressed, unfrozen or removed
-		free(unfreeze);
-
-		if(head == target) {
-			// compression rolled back successfully
-			return 1;
-		}
-
-		if(head->type == UNFREEZE) {
-			return get_next(head) == target;
-		}
-
-		return 0;
-	}
-
-#if LFHT_DEBUG
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	stats->unfreeze_counter++;
-#endif
-	return 1;
-}
-
-// target -> hash level we wanted to compress
-// atomic_bucket -> atomic object of the previous level
-//   bucket pointing to our target
-void abort_compress(
-		struct lfht_head *lfht,
-		int thread_id,
-		struct lfht_node *target,
-		struct lfht_node *freeze,
-		_Atomic(struct lfht_node *) *atomic_bucket)
-{
-	struct lfht_node *expect;
-	struct lfht_node *compression_node = atomic_load_explicit(
-			atomic_bucket,
-			memory_order_consume);
-#if LFHT_DEBUG
-	assert(compression_node);
-	assert(target);
-	// no other thread must interfere with
-	// this thread's compression procedure
-	assert(is_compression_node(compression_node));
-	assert(target->type == HASH);
-#endif
-
-	// point all buckets to target
-	for(int i = 0; i < (1<<target->hash.size); i++) {
-		_Atomic(struct lfht_node *) *nxt_atomic_bucket = &(target->hash.array[i]);
-		expect = freeze;
-
-		// ignoring CAS failure
-		// just making sure all buckets point to target
-		// if it fails, they already do point to target or have a chain
-		atomic_compare_exchange_strong_explicit(
-				nxt_atomic_bucket,
-				&expect,
-				target,
-				memory_order_acq_rel,
-				memory_order_consume);
-	}
-
-	// commit level by removing compression bridge node
-	atomic_store_explicit(
-			atomic_bucket,
-			target,
-			memory_order_release);
-#if LFHT_DEBUG
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	stats->compression_rollback_counter++;
-#endif
-}
-
 // expansion functions
-
 int expand(
 		struct lfht_head *lfht,
 		int thread_id,
 		struct lfht_node **new_hash,
 		struct lfht_node *hnode,
-		struct lfht_node *tail_nxt,
 		size_t hash,
 		_Atomic(struct lfht_node *) *tail_nxt_ptr)
 {
 #if LFHT_DEBUG
-	assert(tail_nxt);
 	assert(hnode);
-	assert(tail_nxt->type == HASH);
 	assert(hnode->type == HASH);
 #endif
 
@@ -1041,10 +944,12 @@ int expand(
 			hnode->hash.hash_pos + hnode->hash.size,
 			hnode);
 
+	struct lfht_node *expect = hnode;
+
 	// add new hash level to tail of chain
 	if(atomic_compare_exchange_strong_explicit(
 				tail_nxt_ptr,
-				&tail_nxt,
+				&expect,
 				*new_hash,
 				memory_order_acq_rel,
 				memory_order_consume)) {
@@ -1058,34 +963,31 @@ int expand(
 		_Atomic(struct lfht_node *) *atomic_bucket =
 			&(hnode->hash.array[pos]);
 
-		struct lfht_node *bucket = atomic_load_explicit(
+		struct lfht_node *head = atomic_load_explicit(
 				atomic_bucket,
 				memory_order_consume);
 
-		if(bucket->type != LEAF) {
-			free(*new_hash);
-			return 0;
-		}
+		adjust_chain_nodes(lfht, thread_id, head, *new_hash);
 
-		adjust_chain_nodes(lfht, thread_id, bucket, *new_hash);
-
-		// store() might interfere with freeze()
-		// checking if bucket's head is still our
-		// first observed node
-		while(!atomic_compare_exchange_strong_explicit(
+		// commit expansion
+		atomic_store_explicit(
 				atomic_bucket,
-				&bucket,
 				*new_hash,
-				memory_order_acq_rel,
-				memory_order_consume)) ;
+				memory_order_release);
+
 #if LFHT_DEBUG
-		struct lfht_stats* stats = lfht->stats[thread_id];
+		struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
 		stats->expansion_counter++;
 		int level = (*new_hash)->hash.hash_pos / (*new_hash)->hash.size;
 		if(stats->max_depth < level) {
 			stats->max_depth = level;
 		}
 #endif
+
+		if(try_compress(lfht, thread_id, *new_hash, hash)) {
+			return 0;
+		}
+
 		return 1;
 	}
 
@@ -1114,7 +1016,7 @@ void adjust_chain_nodes(
 	}
 	// cnode is the chain's current tail
 
-	if(is_invalid(nxt_ptr) || is_compression_node(cnode)) {
+	if(is_invalid(nxt_ptr)) {
 		return;
 	}
 
@@ -1129,7 +1031,8 @@ void adjust_node(
 		struct lfht_node *hnode)
 {
 #if LFHT_DEBUG
-	int trial = 0;
+	struct lfht_stats* stats = lfht->stats[thread_id];
+	stats->operations++;
 #endif
 
 start: ;
@@ -1139,34 +1042,17 @@ start: ;
 	assert(cnode->type == LEAF);
 	assert(hnode->type == HASH);
 
-	struct lfht_stats* stats = lfht->stats[thread_id];
-	trial++;
-	if (stats->max_retry_counter < trial) {
-		stats->max_retry_counter = trial;
-	}
+	stats->max_retry_counter++;
 #endif
 	unsigned int count = 0;
 	size_t hash = cnode->leaf.hash;
-	_Atomic(struct lfht_node *) *current_valid =
+	_Atomic(struct lfht_node *) *bucket =
 		get_atomic_bucket(hash, hnode);
+	_Atomic(struct lfht_node *) *current_valid = bucket;
 	struct lfht_node *expect = valid_ptr(atomic_load_explicit(
 				current_valid,
 				memory_order_consume));
 	struct lfht_node *iter = expect;
-
-	if(is_compression_node(iter)) {
-		if(!unfreeze(lfht, thread_id, hnode, hash)) {
-			// level already removed
-			return;
-		}
-
-		// skip compression node
-		iter = valid_ptr(get_next(iter));
-#if LFHT_DEBUG
-		assert(iter);
-		assert(iter->type == HASH);
-#endif
-	}
 
 	// find tail of target bucket on new hash level
 	while(iter->type == LEAF) {
@@ -1199,7 +1085,7 @@ start: ;
 	// expansion required?
 	if(count >= MAX_NODES) {
 		struct lfht_node *new_hash;
-		if(expand(lfht, thread_id, &new_hash, hnode, expect, hash, current_valid)) {
+		if(expand(lfht, thread_id, &new_hash, hnode, hash, current_valid)) {
 			// adjust node at new level
 			hnode = new_hash;
 		}
@@ -1211,6 +1097,12 @@ start: ;
 	if(!force_cas(cnode, hnode)) {
 		// node invalidated in the meantime
 		return;
+	}
+
+	int is_bucket_empty = bucket == current_valid && expect == hnode;
+	if(is_bucket_empty && !try_increment(lfht, thread_id, hnode, hash)) {
+		hnode = hnode->hash.prev;
+		goto start;
 	}
 
 	// inserting node in chain of the newer level
@@ -1226,6 +1118,12 @@ start: ;
 		}
 		return;
 	}
+
+	if(is_bucket_empty && try_compress(lfht, thread_id, hnode, hash)) {
+		// level collapsed after compression
+		hnode = hnode->hash.prev;
+	}
+
 	// insertion failed
 	goto start;
 }
@@ -1286,11 +1184,9 @@ void *debug_search_chain(
 		size_t hash)
 {
 	if(cnode->leaf.hash == hash) {
-		if(is_invalid(atomic_load_explicit(
+		if(!is_invalid(atomic_load_explicit(
 						&(cnode->leaf.next),
 						memory_order_seq_cst)))
-			fprintf(stderr, "Invalid node found: %p\n", cnode->leaf.value);
-		else
 			return cnode->leaf.value;
 	}
 	struct lfht_node *next_node = valid_ptr(atomic_load_explicit(
