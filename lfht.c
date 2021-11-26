@@ -595,10 +595,6 @@ start: ;
 #endif
 
 		struct lfht_node *nxt_iter = get_next(iter);
-		if(valid_ptr(nxt_iter)->type != LEAF && valid_ptr(nxt_iter)->type != HASH && !is_compression_node(valid_ptr(nxt_iter))) {
-			printf("is inv %d nxt dirr %llu -> %llu type %d %d\n", is_invalid(nxt_iter), iter, valid_ptr(nxt_iter), iter->type, nxt_iter->type);
-			exit(1);
-		}
 		if(!is_invalid(nxt_iter)) {
 			// iter is a valid node
 
@@ -640,7 +636,6 @@ start: ;
 	assert(hnode->type == HASH);
 
 	stats->max_retry_counter++;
-	//if(stats->max_retry_counter > CYCLE_THRESHOLD) { printf("unreach\n"); exit(1); }
 #endif
 	struct lfht_node *iter;
 	struct lfht_node *nxt = valid_ptr(get_next(cnode));
@@ -779,7 +774,6 @@ struct lfht_node *search_insert(
 start: ;
 #if LFHT_DEBUG
 	stats->max_retry_counter++;
-	//if(stats->max_retry_counter > CYCLE_THRESHOLD) { printf("insert\n"); exit(1); }
 #endif
 
 	struct lfht_node *cnode;
@@ -861,7 +855,6 @@ start: ;
 	assert(target->type == HASH);
 
 	stats->max_retry_counter++;
-	//if(stats->max_retry_counter > CYCLE_THRESHOLD) { printf("compress\n"); exit(1); }
 #endif
 
 	if(target->hash.prev == NULL || !is_empty(target)) {
@@ -1133,7 +1126,6 @@ int expand(
 
 		if(valid_ptr(bucket)->type != LEAF) {
 			if(valid_ptr(bucket) != (*new_hash)) {
-				printf("prob %llu type %d\n", bucket, bucket->type);
 				return 0;
 			}
 			compress(lfht, thread_id, (*new_hash), hash);
@@ -1241,7 +1233,6 @@ start: ;
 	assert(hnode->type == HASH);
 
 	stats->max_retry_counter++;
-	//if(stats->max_retry_counter > CYCLE_THRESHOLD) { printf("adjust\n"); exit(1); }
 #endif
 	unsigned int count = 0;
 	size_t hash = cnode->leaf.hash;
