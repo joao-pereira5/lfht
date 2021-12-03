@@ -1,0 +1,63 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_OUTPUT_EXCMD	mixed	/number, pattern, mixed, or combineV2/
+!_TAG_OUTPUT_FILESEP	slash	/slash or backslash/
+!_TAG_OUTPUT_MODE	u-ctags	/u-ctags or e-ctags/
+!_TAG_PATTERN_LENGTH_LIMIT	96	/0 for no limit/
+!_TAG_PROC_CWD	/home/bob/Documents/Faculdade/Code/lfht/	//
+!_TAG_PROGRAM_AUTHOR	Universal Ctags Team	//
+!_TAG_PROGRAM_NAME	Universal Ctags	/Derived from Exuberant Ctags/
+!_TAG_PROGRAM_URL	https://ctags.io/	/official site/
+!_TAG_PROGRAM_VERSION	5.9.0	/p5.9.20210905.0/
+CYCLE_THRESHOLD	lfht.c	/^#define CYCLE_THRESHOLD /;"	d	file:
+FREEZE	lfht.c	/^enum ntype {HASH, LEAF, FREEZE, UNFREEZE};$/;"	e	enum:ntype	file:
+HASH	lfht.c	/^enum ntype {HASH, LEAF, FREEZE, UNFREEZE};$/;"	e	enum:ntype	file:
+LEAF	lfht.c	/^enum ntype {HASH, LEAF, FREEZE, UNFREEZE};$/;"	e	enum:ntype	file:
+UNFREEZE	lfht.c	/^enum ntype {HASH, LEAF, FREEZE, UNFREEZE};$/;"	e	enum:ntype	file:
+_Atomic	lfht.c	/^_Atomic(struct lfht_node *) *get_atomic_bucket($/;"	f
+__anon0b3ce744010a	lfht.c	/^	union {$/;"	u	struct:lfht_node	file:
+adjust_chain_nodes	lfht.c	/^void adjust_chain_nodes($/;"	f	typeref:typename:void
+adjust_node	lfht.c	/^void adjust_node($/;"	f	typeref:typename:void
+compress	lfht.c	/^void compress($/;"	f	typeref:typename:void
+create_freeze_node	lfht.c	/^struct lfht_node *create_freeze_node($/;"	f	typeref:struct:lfht_node *
+create_hash_node	lfht.c	/^struct lfht_node *create_hash_node($/;"	f	typeref:struct:lfht_node *
+create_leaf_node	lfht.c	/^struct lfht_node *create_leaf_node($/;"	f	typeref:struct:lfht_node *
+create_unfreeze_node	lfht.c	/^struct lfht_node *create_unfreeze_node($/;"	f	typeref:struct:lfht_node *
+debug_search_chain	lfht.c	/^void *debug_search_chain($/;"	f	typeref:typename:void *
+debug_search_hash	lfht.c	/^void *debug_search_hash($/;"	f	typeref:typename:void *
+expand	lfht.c	/^int expand($/;"	f	typeref:typename:int
+find_node	lfht.c	/^int find_node($/;"	f	typeref:typename:int
+force_cas	lfht.c	/^int force_cas(struct lfht_node *node, struct lfht_node *replace)$/;"	f	typeref:typename:int
+free_lfht	lfht.c	/^void free_lfht(struct lfht_head *lfht) {$/;"	f	typeref:typename:void
+get_bucket_index	lfht.c	/^int get_bucket_index($/;"	f	typeref:typename:int
+get_next	lfht.c	/^struct lfht_node *get_next($/;"	f	typeref:struct:lfht_node *
+hash	lfht.c	/^		struct lfht_node_hash hash;$/;"	m	union:lfht_node::__anon0b3ce744010a	typeref:struct:lfht_node_hash	file:
+hash	lfht.c	/^	size_t hash;$/;"	m	struct:lfht_node_leaf	typeref:typename:size_t	file:
+hash_pos	lfht.c	/^	int hash_pos;$/;"	m	struct:lfht_node_hash	typeref:typename:int	file:
+init_lfht	lfht.c	/^struct lfht_head *init_lfht(int max_threads) {$/;"	f	typeref:struct:lfht_head *
+init_lfht_explicit	lfht.c	/^struct lfht_head *init_lfht_explicit($/;"	f	typeref:struct:lfht_head *
+invalid_ptr	lfht.c	/^struct lfht_node *invalid_ptr(struct lfht_node *next)$/;"	f	typeref:struct:lfht_node *
+is_compression_node	lfht.c	/^unsigned is_compression_node(struct lfht_node *node)$/;"	f	typeref:typename:unsigned
+is_empty	lfht.c	/^unsigned is_empty(struct lfht_node *hnode)$/;"	f	typeref:typename:unsigned
+is_invalid	lfht.c	/^unsigned is_invalid(struct lfht_node *ptr)$/;"	f	typeref:typename:unsigned
+leaf	lfht.c	/^		struct lfht_node_leaf leaf;$/;"	m	union:lfht_node::__anon0b3ce744010a	typeref:struct:lfht_node_leaf	file:
+lfht_debug_search	lfht.c	/^void *lfht_debug_search($/;"	f	typeref:typename:void *
+lfht_end_thread	lfht.c	/^void lfht_end_thread(struct lfht_head *lfht, int thread_id)$/;"	f	typeref:typename:void
+lfht_init_thread	lfht.c	/^int lfht_init_thread(struct lfht_head *lfht)$/;"	f	typeref:typename:int
+lfht_insert	lfht.c	/^struct lfht_node *lfht_insert($/;"	f	typeref:struct:lfht_node *
+lfht_node	lfht.c	/^struct lfht_node {$/;"	s	file:
+lfht_node_hash	lfht.c	/^struct lfht_node_hash {$/;"	s	file:
+lfht_node_leaf	lfht.c	/^struct lfht_node_leaf {$/;"	s	file:
+lfht_remove	lfht.c	/^void lfht_remove($/;"	f	typeref:typename:void
+lfht_search	lfht.c	/^void *lfht_search($/;"	f	typeref:typename:void *
+make_unreachable	lfht.c	/^void make_unreachable($/;"	f	typeref:typename:void
+mark_invalid	lfht.c	/^int mark_invalid(struct lfht_node *cnode)$/;"	f	typeref:typename:int
+ntype	lfht.c	/^enum ntype {HASH, LEAF, FREEZE, UNFREEZE};$/;"	g	file:
+prev	lfht.c	/^	struct lfht_node *prev;$/;"	m	struct:lfht_node_hash	typeref:struct:lfht_node *	file:
+search_insert	lfht.c	/^struct lfht_node *search_insert($/;"	f	typeref:struct:lfht_node *
+search_node	lfht.c	/^void *search_node($/;"	f	typeref:typename:void *
+search_remove	lfht.c	/^void search_remove($/;"	f	typeref:typename:void
+size	lfht.c	/^	int size;$/;"	m	struct:lfht_node_hash	typeref:typename:int	file:
+type	lfht.c	/^	enum ntype type;$/;"	m	struct:lfht_node	typeref:enum:ntype	file:
+valid_ptr	lfht.c	/^struct lfht_node *valid_ptr(struct lfht_node *next)$/;"	f	typeref:struct:lfht_node *
+value	lfht.c	/^	void *value;$/;"	m	struct:lfht_node_leaf	typeref:typename:void *	file:
