@@ -175,7 +175,8 @@ void free_lfht(struct lfht_head *lfht) {
 int lfht_init_thread(struct lfht_head *lfht)
 {
 #if LFHT_DEBUG
-	struct lfht_stats *s = (struct lfht_stats *) aligned_alloc(CACHE_SIZE, CACHE_SIZE);
+	size_t stats_size = CACHE_SIZE * ((sizeof(struct lfht_stats) / CACHE_SIZE) + 1);
+	struct lfht_stats *s = (struct lfht_stats *) aligned_alloc(CACHE_SIZE, stats_size);
 	s->compression_counter = 0;
 	s->compression_rollback_counter = 0;
 	s->expansion_counter = 0;
@@ -183,8 +184,12 @@ int lfht_init_thread(struct lfht_head *lfht)
 	s->freeze_counter = 0;
 	s->max_retry_counter = 0;
 	s->operations = 0;
+	s->inserts = 0;
+	s->removes = 0;
+	s->searches = 0;
 	s->api_calls = 0;
 	s->max_depth = 0;
+	s->paths = 0;
 
 	for(int i = 0; i < lfht->max_threads; i++) {
 		struct lfht_stats *expect = NULL;
@@ -217,6 +222,7 @@ void *lfht_search(
 #if LFHT_DEBUG
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->api_calls++;
+	stats->searches++;
 #endif
 	return search_node(
 			lfht,
@@ -234,6 +240,7 @@ struct lfht_node *lfht_insert(
 #if LFHT_DEBUG
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->api_calls++;
+	stats->inserts++;
 #endif
 	return search_insert(
 			lfht,
@@ -251,6 +258,7 @@ void lfht_remove(
 #if LFHT_DEBUG
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->api_calls++;
+	stats->removes++;
 #endif
 	return search_remove(
 			lfht,
@@ -481,6 +489,7 @@ start: ;
 	assert(hnode);
 	assert(*hnode);
 	assert((*hnode)->type == HASH);
+	struct lfht_stats* stats = lfht->stats[thread_id];
 #endif
 
 	struct lfht_node **head_ptr = get_atomic_bucket(hash, *hnode);
@@ -516,6 +525,10 @@ start: ;
 		struct lfht_node *nxt_iter = get_next(iter);
 		if(iter->leaf.hash == hash) {
 			// found node
+#if LFHT_DEBUG
+			int pos = (*hnode)->hash.hash_pos;
+			stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
+#endif
 			*nodeptr = iter;
 			return 1;
 		}
@@ -527,6 +540,11 @@ start: ;
 		}
 		iter = nxt_iter;
 	}
+
+#if LFHT_DEBUG
+	int pos = (*hnode)->hash.hash_pos;
+	stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
+#endif
 	return 0;
 }
 
