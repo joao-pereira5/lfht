@@ -11,16 +11,23 @@
 #define CACHE_SIZE 64
 
 #if LFHT_DEBUG
+#include <time.h>
+
 struct lfht_stats {
 	int compression_counter;
 	int compression_rollback_counter;
 	int expansion_counter;
 	int unfreeze_counter;
 	int freeze_counter;
-	int max_retry_counter;
+	unsigned long max_retry_counter;
 	int operations;
+	int inserts;
+	int removes;
+	int searches;
 	int api_calls;
 	int max_depth;
+	unsigned long paths;
+	struct timespec term;
 };
 #endif
 
