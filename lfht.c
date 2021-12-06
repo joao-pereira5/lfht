@@ -56,11 +56,12 @@ struct lfht_node *search_insert(
 		size_t hash,
 		void *value);
 
-void compress(
+int compress(
 		struct lfht_head *lfht,
 		int thread_id,
 		struct lfht_node *target,
-		size_t hash);
+		size_t hash,
+		int depth);
 
 int unfreeze(
 		struct lfht_head *lfht,
@@ -633,6 +634,33 @@ start: ;
 	return 0;
 }
 
+int mark_responsible(struct lfht_node *hnode) {
+	for(int i = 0; i < (1<<hnode->hash.size); i++) {
+		struct lfht_node *head;
+		_Atomic(struct lfht_node *) *nxt_atomic_bucket = &(hnode->hash.array[i]);
+
+		head = atomic_load_explicit(
+				nxt_atomic_bucket,
+				memory_order_consume);
+
+		if(is_invalid(head)) {
+			return 1;
+		}
+		struct lfht_node *marked = invalid_ptr(head);
+
+		if(head != hnode && atomic_compare_exchange_strong_explicit(
+			nxt_atomic_bucket,
+			&head,
+			marked,
+			memory_order_acq_rel,
+			memory_order_consume)) {
+
+			return 1;
+		}
+	}
+	return 0;
+}
+
 void make_unreachable(
 		struct lfht_head *lfht,
 		int thread_id,
@@ -724,10 +752,13 @@ start: ;
 #endif
 
 		// let's not forget to mark bucket as invalid
-		if(responsible && observed_bucket == prev_atomic) {
-			nxt = invalid_ptr(nxt);
+		if(responsible) {
 			prev = invalid_ptr(prev);
+			if(observed_bucket != prev_atomic) {
+				nxt = invalid_ptr(nxt);
+			}
 		}
+
 
 		struct lfht_node *exp = prev;
 		if(atomic_compare_exchange_strong_explicit(
@@ -739,7 +770,9 @@ start: ;
 
 			if(responsible && observed_bucket == prev_atomic) {
 				// our removed node was the last of the chain
-				compress(lfht, thread_id, hnode, cnode->leaf.hash);
+				if(!compress(lfht, thread_id, hnode, cnode->leaf.hash, 0)) {
+					mark_responsible(hnode);
+				}
 			}
 
 			return;
@@ -854,11 +887,12 @@ start: ;
 
 // compression functions
 
-void compress(
+int compress(
 		struct lfht_head *lfht,
 		int thread_id,
 		struct lfht_node *target,
-		size_t hash)
+		size_t hash,
+		int depth)
 {
 #if LFHT_DEBUG
 	struct lfht_stats* stats = lfht->stats[thread_id];
@@ -875,7 +909,7 @@ start: ;
 
 	if(target->hash.prev == NULL || !is_empty(target)) {
 		// we cannot compress the root hash or a non empty hash
-		return;
+		return depth;
 	}
 
 	struct lfht_node *freeze = create_freeze_node(target);
@@ -899,7 +933,7 @@ start: ;
 				memory_order_acq_rel,
 				memory_order_consume)) {
 		free(freeze);
-		return;
+		return depth;
 	}
 #if LFHT_DEBUG
 	stats->freeze_counter++;
@@ -958,11 +992,12 @@ start: ;
 #endif
 
 	if(!responsible) {
-		return;
+		return 1;
 	}
 
 	// try to compress previous level
 	target = target->hash.prev;
+	depth = 1;
 	goto start;
 }
 
@@ -1144,7 +1179,7 @@ int expand(
 			if(valid_ptr(bucket) != (*new_hash)) {
 				return 0;
 			}
-			compress(lfht, thread_id, (*new_hash), hash);
+			compress(lfht, thread_id, (*new_hash), hash, 0);
 			return 0;
 		}
 
@@ -1164,34 +1199,19 @@ int expand(
 				memory_order_acq_rel,
 				memory_order_consume)) ;
 
-		for(int i = 0; i < (1<<(*new_hash)->hash.size); i++) {
-			struct lfht_node *head;
-			_Atomic(struct lfht_node *) *nxt_atomic_bucket = &((*new_hash)->hash.array[i]);
-
-			head = valid_ptr(atomic_load_explicit(
-					nxt_atomic_bucket,
-					memory_order_consume));
-
-			if(head != hnode && atomic_compare_exchange_strong_explicit(
-				nxt_atomic_bucket,
-				&head,
-				invalid_ptr(head),
-				memory_order_acq_rel,
-				memory_order_consume)) {
-
+		if(mark_responsible((*new_hash))) {
 #if LFHT_DEBUG
-				struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
-				stats->expansion_counter++;
-				int level = (*new_hash)->hash.hash_pos / (*new_hash)->hash.size;
-				if(stats->max_depth < level) {
-					stats->max_depth = level;
-				}
-#endif
-				return 1;
+			struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
+			stats->expansion_counter++;
+			int level = (*new_hash)->hash.hash_pos / (*new_hash)->hash.size;
+			if(stats->max_depth < level) {
+				stats->max_depth = level;
 			}
+#endif
+			return 1;
 		}
 
-		compress(lfht, thread_id, (*new_hash), hash);
+		compress(lfht, thread_id, (*new_hash), hash, 0);
 		return 0;
 	}
 
