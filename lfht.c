@@ -770,8 +770,15 @@ start: ;
 
 			if(responsible && observed_bucket == prev_atomic) {
 				// our removed node was the last of the chain
-				if(!compress(lfht, thread_id, hnode, cnode->leaf.hash, 0)) {
-					mark_responsible(hnode);
+				// try compress
+				while(1) {
+					if(compress(lfht, thread_id, hnode, cnode->leaf.hash, 0)) {
+						break;
+					}
+
+					if(mark_responsible(hnode)) {
+						break;
+					}
 				}
 			}
 
