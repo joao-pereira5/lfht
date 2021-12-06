@@ -1067,6 +1067,15 @@ int expand(
 				hnode->hash.hash_pos,
 				hnode->hash.size);
 
+#if LFHT_DEBUG
+		struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
+		stats->expansion_counter++;
+		int level = (*new_hash)->hash.hash_pos / (*new_hash)->hash.size;
+		if(stats->max_depth < level) {
+			stats->max_depth = level;
+		}
+#endif
+
 		// move all nodes of chain to new level
 		_Atomic(struct lfht_node *) *atomic_bucket =
 			&(hnode->hash.array[pos]);
@@ -1091,14 +1100,6 @@ int expand(
 				*new_hash,
 				memory_order_acq_rel,
 				memory_order_consume)) ;
-#if LFHT_DEBUG
-		struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
-		stats->expansion_counter++;
-		int level = (*new_hash)->hash.hash_pos / (*new_hash)->hash.size;
-		if(stats->max_depth < level) {
-			stats->max_depth = level;
-		}
-#endif
 		return 1;
 	}
 
