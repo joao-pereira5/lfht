@@ -546,6 +546,7 @@ start: ;
 	assert(*hnode);
 	assert((*hnode)->type == HASH);
 	struct lfht_stats* stats = lfht->stats[thread_id];
+	int hops = 0;
 #endif
 
 	_Atomic(struct lfht_node *) *atomic_head =
@@ -591,6 +592,7 @@ start: ;
 #if LFHT_DEBUG
 		assert(!is_compression_node(head));
 		assert(iter->type == LEAF);
+		hops++;
 #endif
 
 		struct lfht_node *nxt_iter = get_next(iter);
@@ -603,6 +605,7 @@ start: ;
 #if LFHT_DEBUG
 				int pos = (*hnode)->hash.hash_pos;
 				stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
+				stats->paths += hops - 1;
 #endif
 				return 1;
 			}
@@ -621,6 +624,9 @@ start: ;
 #if LFHT_DEBUG
 	int pos = (*hnode)->hash.hash_pos;
 	stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
+	if(hops > 0) {
+		stats->paths += hops - 1;
+	}
 #endif
 	return 0;
 }
