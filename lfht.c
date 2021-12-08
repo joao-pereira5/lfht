@@ -624,7 +624,9 @@ start: ;
 #if LFHT_DEBUG
 	int pos = (*hnode)->hash.hash_pos;
 	stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
-	stats->paths += hops - 1;
+	if(hops > 0) {
+		stats->paths += hops - 1;
+	}
 #endif
 	return 0;
 }
