@@ -607,10 +607,10 @@ start: ;
 
 	// disconnect our target from chain
 	*target = nxt;
-	if(((struct lfht_node **)&(hnode->hash.array[pos])) == target) {
-		// empty bucket, try compress
-		compress(lfht, thread_id, hnode, cnode->leaf.hash);
-	}
+	//if(((struct lfht_node **)&(hnode->hash.array[pos])) == target) {
+	//	// empty bucket, try compress
+	//	compress(lfht, thread_id, hnode, cnode->leaf.hash);
+	//}
 }
 
 // remove functions
