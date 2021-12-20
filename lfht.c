@@ -6,7 +6,7 @@
 #if LFHT_DEBUG
 #include <stdio.h>
 #include <assert.h>
-#define CYCLE_THRESHOLD 10000000
+#define CYCLE_THRESHOLD 100000
 #endif
 
 enum ntype {HASH, LEAF, FREEZE, UNFREEZE};
@@ -539,6 +539,9 @@ int find_node(
 		_Atomic(struct lfht_node *) **last_valid_atomic,
 		unsigned int *count)
 {
+#if LFHT_DEBUG
+	int i = 0;
+#endif
 start: ;
 #if LFHT_DEBUG
 	assert(nodeptr);
@@ -546,7 +549,10 @@ start: ;
 	assert(*hnode);
 	assert((*hnode)->type == HASH);
 	struct lfht_stats* stats = lfht->stats[thread_id];
-	int hops = 0;
+	i++;
+	if(i >= CYCLE_THRESHOLD) {
+		exit(1);
+	}
 #endif
 
 	_Atomic(struct lfht_node *) *atomic_head =
@@ -575,7 +581,9 @@ start: ;
 
 	// traverse chain (tail points back to hash node)
 	while(iter != *hnode) {
-
+#if LFHT_DEBUG
+		if(iter->type == LEAF) stats->paths++;
+#endif
 		if(iter->type == HASH) {
 			// travel down a level and search for the node there
 
@@ -586,13 +594,15 @@ start: ;
 				iter = iter->hash.prev;
 			}
 
+#if LFHT_DEBUG
+			//stats->paths++;
+#endif
 			*hnode = iter;
 			goto start;
 		}
 #if LFHT_DEBUG
 		assert(!is_compression_node(head));
 		assert(iter->type == LEAF);
-		hops++;
 #endif
 
 		struct lfht_node *nxt_iter = get_next(iter);
@@ -603,13 +613,17 @@ start: ;
 				// found node
 				*nodeptr = iter;
 #if LFHT_DEBUG
-				int pos = (*hnode)->hash.hash_pos;
-				stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
-				stats->paths += hops - 1;
+				int level = (*hnode)->hash.hash_pos / (*hnode)->hash.size;
+				if(stats->max_depth < level) {
+					stats->max_depth = level;
+				}
 #endif
 				return 1;
 			}
 			*nodeptr = nxt_iter;
+#if LFHT_DEBUG
+			//stats->paths++;
+#endif
 
 			if(last_valid_atomic) {
 				*last_valid_atomic = &(iter->leaf.next);
@@ -622,10 +636,9 @@ start: ;
 	}
 
 #if LFHT_DEBUG
-	int pos = (*hnode)->hash.hash_pos;
-	stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
-	if(hops > 0) {
-		stats->paths += hops - 1;
+	int level = (*hnode)->hash.hash_pos / (*hnode)->hash.size;
+	if(stats->max_depth < level) {
+		stats->max_depth = level;
 	}
 #endif
 	return 0;
@@ -725,7 +738,7 @@ start: ;
 
 			if(observed_bucket == prev_atomic) {
 				// our removed node was the last of the chain
-				compress(lfht, thread_id, hnode, cnode->leaf.hash);
+				//compress(lfht, thread_id, hnode, cnode->leaf.hash);
 			}
 
 			return;
@@ -772,10 +785,15 @@ struct lfht_node *search_insert(
 #if LFHT_DEBUG
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->operations++;
+	int i = 0;
 #endif
 
 start: ;
 #if LFHT_DEBUG
+	i++;
+	if(i >= CYCLE_THRESHOLD) {
+		exit(1);
+	}
 	stats->max_retry_counter++;
 #endif
 
@@ -805,7 +823,7 @@ start: ;
 #endif
 
 	// expand hash level
-	if(count >= MAX_NODES) {
+	if(count >= lfht->max_chain_nodes) {
 		struct lfht_node *new_hash;
 		// add new level to tail of chain
 		if(expand(lfht, thread_id, &new_hash, hnode, hash, last_valid_atomic)) {
@@ -1062,7 +1080,7 @@ int expand(
 	struct lfht_node *exp = hnode;
 
 	*new_hash = create_hash_node(
-			HASH_SIZE,
+			lfht->hash_size,
 			hnode->hash.hash_pos + hnode->hash.size,
 			hnode);
 
@@ -1088,6 +1106,8 @@ int expand(
 				memory_order_consume);
 
 		if(bucket->type != LEAF) {
+			printf("PANIC\n");
+			exit(1);
 			free(*new_hash);
 			return 0;
 		}
@@ -1102,7 +1122,11 @@ int expand(
 				&bucket,
 				*new_hash,
 				memory_order_acq_rel,
-				memory_order_consume)) ;
+				memory_order_consume)) {
+			if(bucket == (*new_hash)) {
+				break;
+			}
+		}
 #if LFHT_DEBUG
 		struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
 		stats->expansion_counter++;
@@ -1116,6 +1140,44 @@ int expand(
 
 	// failed
 	free(*new_hash);
+
+	if(exp->type == HASH && exp != hnode) {
+		// assist expansion
+		//printf("Assisting %d before %d\n", exp->hash.hash_pos, hnode->hash.hash_pos);
+		*new_hash = exp;
+
+		int pos = get_bucket_index(
+				hash,
+				hnode->hash.hash_pos,
+				hnode->hash.size);
+
+		// move all nodes of chain to new level
+		_Atomic(struct lfht_node *) *atomic_bucket =
+			&(hnode->hash.array[pos]);
+
+		struct lfht_node *bucket = atomic_load_explicit(
+				atomic_bucket,
+				memory_order_consume);
+
+		if(bucket->type != LEAF) {
+			return 0;
+		}
+
+		adjust_chain_nodes(lfht, thread_id, bucket, *new_hash);
+
+		//while(!atomic_compare_exchange_strong_explicit(
+		//		atomic_bucket,
+		//		&bucket,
+		//		*new_hash,
+		//		memory_order_acq_rel,
+		//		memory_order_consume)) {
+		//	if(bucket == (*new_hash)) {
+		//		break;
+		//	}
+		//}
+		return 1;
+	}
+
 	return 0;
 }
 
@@ -1135,6 +1197,9 @@ void adjust_chain_nodes(
 	struct lfht_node *nxt = valid_ptr(nxt_ptr);
 
 	if(nxt != hnode) {
+		if(nxt->type == HASH) {
+			return;
+		}
 		adjust_chain_nodes(lfht, thread_id, nxt, hnode);
 	}
 	// cnode is the chain's current tail
@@ -1156,6 +1221,7 @@ void adjust_node(
 #if LFHT_DEBUG
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->operations++;
+	int i = 0;
 #endif
 
 start: ;
@@ -1164,6 +1230,10 @@ start: ;
 	assert(hnode);
 	assert(cnode->type == LEAF);
 	assert(hnode->type == HASH);
+	i++;
+	if(i >= CYCLE_THRESHOLD) {
+		exit(1);
+	}
 
 	stats->max_retry_counter++;
 #endif
@@ -1194,6 +1264,10 @@ start: ;
 	while(iter->type == LEAF) {
 		struct lfht_node *nxt_ptr = get_next(iter);
 
+		if(valid_ptr(iter)->leaf.hash == hash || valid_ptr(nxt_ptr)->leaf.hash == hash) {
+			return;
+		}
+
 		if(is_invalid(nxt_ptr)) {
 			// skip invalid node
 			iter = valid_ptr(nxt_ptr);
@@ -1219,7 +1293,7 @@ start: ;
 	}
 
 	// expansion required?
-	if(count >= MAX_NODES) {
+	if(count >= lfht->max_chain_nodes) {
 		struct lfht_node *new_hash;
 		if(expand(lfht, thread_id, &new_hash, hnode, hash, current_valid)) {
 			// adjust node at new level
