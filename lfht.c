@@ -504,6 +504,9 @@ start: ;
 
 	// traverse chain (tail points back to hash node)
 	while(iter != *hnode) {
+#if LFHT_DEBUG
+		stats->paths++;
+#endif
 
 		if(iter->type == HASH) {
 			// travel down a level and search for the node there
@@ -525,10 +528,6 @@ start: ;
 		struct lfht_node *nxt_iter = get_next(iter);
 		if(iter->leaf.hash == hash) {
 			// found node
-#if LFHT_DEBUG
-			int pos = (*hnode)->hash.hash_pos;
-			stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
-#endif
 			*nodeptr = iter;
 			return 1;
 		}
@@ -541,10 +540,6 @@ start: ;
 		iter = nxt_iter;
 	}
 
-#if LFHT_DEBUG
-	int pos = (*hnode)->hash.hash_pos;
-	stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
-#endif
 	return 0;
 }
 

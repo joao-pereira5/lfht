@@ -42,6 +42,25 @@ struct lfht_head {
 #endif
 };
 
+#if LFHT_DEBUG
+void lfht_reset_stats(struct lfht_head *lfht, int tid) {
+	struct lfht_stats *s = lfht->stats[tid];
+	s->compression_counter = 0;
+	s->compression_rollback_counter = 0;
+	s->expansion_counter = 0;
+	s->unfreeze_counter = 0;
+	s->freeze_counter = 0;
+	s->max_retry_counter = 0;
+	s->operations = 0;
+	s->inserts = 0;
+	s->removes = 0;
+	s->searches = 0;
+	s->api_calls = 0;
+	s->max_depth = 0;
+	s->paths = 0;
+}
+#endif
+
 struct lfht_head *init_lfht(
 		int max_threads);
 
