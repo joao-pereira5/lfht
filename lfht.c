@@ -21,6 +21,7 @@ struct lfht_node;
 struct lfht_node_hash {
 	int size;
 	int hash_pos;
+	_Atomic(int) role;
 	struct lfht_node *prev;
 	_Atomic(struct lfht_node *) array[0];
 };
@@ -349,6 +350,7 @@ struct lfht_node *create_hash_node(
 	node->type = HASH;
 	node->hash.size = size;
 	node->hash.hash_pos = hash_pos;
+	atomic_init(&(node->hash.role), 0);
 	node->hash.prev = prev;
 	for(int i=0; i < 1<<size; i++) {
 		atomic_init(&(node->hash.array[i]), node);
@@ -518,6 +520,41 @@ int force_cas(struct lfht_node *node, struct lfht_node *replace)
 		}
 	}
 	return 1;
+}
+
+int give_role(struct lfht_node *hnode)
+{
+	for(int i = 0; i < (1<<hnode->hash.size); i++) {
+		struct lfht_node *head;
+		_Atomic(struct lfht_node *) *nxt_atomic_bucket =
+			&(hnode->hash.array[i]);
+
+		head = atomic_load_explicit(
+				nxt_atomic_bucket,
+				memory_order_consume);
+
+		if(is_compression_node(head)) {
+			return 1;
+		}
+
+		if(head == hnode) {
+			continue;
+		}
+
+		atomic_store_explicit(
+				&(hnode->hash.role),
+				i,
+				memory_order_release);
+
+		// observe again
+		head = atomic_load_explicit(
+				nxt_atomic_bucket,
+				memory_order_consume);
+
+		return head != hnode;
+	}
+
+	return 0;
 }
 
 // this function changes the values of *hnode, *nodeptr, count and *last_valid_atomic
@@ -712,11 +749,19 @@ start: ;
 					memory_order_acq_rel,
 					memory_order_consume)) {
 
-			if(observed_bucket == prev_atomic) {
-				// our removed node was the last of the chain
+			if(observed_bucket != prev_atomic) {
+				// bucket not empty
+				return;
+			}
+			// our removed node was the last of the chain
+
+			int role = atomic_load_explicit(
+					&(hnode->hash.role),
+					memory_order_consume);
+
+			if(role == pos) {
 				compress(lfht, thread_id, hnode, cnode->leaf.hash);
 			}
-
 			return;
 		}
 
@@ -844,8 +889,16 @@ start: ;
 	stats->max_retry_counter++;
 #endif
 
-	if(target->hash.prev == NULL || !is_empty(target)) {
+	if(target->hash.prev == NULL) {
+		return;
+	}
+
+	if(!is_empty(target)) {
 		// we cannot compress the root hash or a non empty hash
+		if(!give_role(target)) {
+			goto start;
+		}
+
 		return;
 	}
 
