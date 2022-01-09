@@ -1145,6 +1145,7 @@ int expand(
 				*new_hash,
 				memory_order_acq_rel,
 				memory_order_consume)) ;
+
 #if LFHT_DEBUG
 		struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
 		stats->expansion_counter++;
@@ -1153,6 +1154,11 @@ int expand(
 			stats->max_depth = level;
 		}
 #endif
+
+		if(!give_role(*new_hash)) {
+			compress(lfht, thread_id, *new_hash, hash);
+		}
+
 		return 1;
 	}
 
