@@ -956,7 +956,7 @@ int expand(
 #endif
 
 	*new_hash = create_hash_node(
-			HASH_SIZE,
+			lfht->hash_size,
 			hnode->hash.hash_pos + hnode->hash.size,
 			hnode);
 
