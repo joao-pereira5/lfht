@@ -643,7 +643,7 @@ start: ;
 
 	if(last_valid_atomic) {
 		*last_valid_atomic = atomic_head;
-		*count = 0;
+		*count = iter->type == LEAF ? 1 : 0;
 	}
 
 	// traverse chain (tail points back to hash node)
