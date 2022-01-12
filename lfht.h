@@ -1,8 +1,11 @@
 #include <stddef.h>
 
-
 #ifndef LFHT_DEBUG
 #define LFHT_DEBUG 0
+#endif
+
+#ifndef LFHT_STATS
+#define LFHT_STATS 0
 #endif
 
 #define MAX_NODES 3
@@ -10,7 +13,7 @@
 #define HASH_SIZE 4
 #define CACHE_SIZE 64
 
-#if LFHT_DEBUG
+#if LFHT_STATS
 #include <time.h>
 
 struct lfht_stats {
@@ -37,12 +40,12 @@ struct lfht_head {
 	int root_hash_size;
 	int hash_size;
 	int max_chain_nodes;
-#if LFHT_DEBUG
+#if LFHT_STATS
 	_Atomic(struct lfht_stats*) *stats;
 #endif
 };
 
-#if LFHT_DEBUG
+#if LFHT_STATS
 void lfht_reset_stats(struct lfht_head *lfht, int tid) {
 	struct lfht_stats *s = lfht->stats[tid];
 	s->compression_counter = 0;
@@ -96,9 +99,3 @@ void lfht_remove(
 		size_t hash,
 		int thread_id);
 
-//debug interface
-
-void *lfht_debug_search(
-		struct lfht_head *head,
-		size_t hash,
-		int thread_id);

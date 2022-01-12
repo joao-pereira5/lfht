@@ -3,7 +3,7 @@
 #include <stdatomic.h>
 #include <lfht.h>
 
-#if LFHT_DEBUG
+#if LFHT_STATS
 #include <stdio.h>
 #include <assert.h>
 #define CYCLE_THRESHOLD 10000000
@@ -120,7 +120,7 @@ unsigned is_empty(struct lfht_node *hnode);
 
 // debug functions
 
-#if LFHT_DEBUG
+#if LFHT_STATS
 
 void *lfht_debug_search(
 		struct lfht_head *lfht,
@@ -161,7 +161,7 @@ struct lfht_head *init_lfht_explicit(
 	lfht->root_hash_size = root_hash_size;
 	lfht->hash_size = hash_size;
 	lfht->max_chain_nodes = max_chain_nodes;
-#if LFHT_DEBUG
+#if LFHT_STATS
 	lfht->stats = (_Atomic(struct lfht_stats*) *)
 		malloc(max_threads*sizeof(_Atomic(struct lfht_stats*)));
 
@@ -177,7 +177,7 @@ struct lfht_head *init_lfht_explicit(
 }
 
 void free_lfht(struct lfht_head *lfht) {
-#if LFHT_DEBUG
+#if LFHT_STATS
 	for(int i = 0; i < lfht->max_threads; i++) {
 		free(lfht->stats[i]);
 	}
@@ -187,7 +187,7 @@ void free_lfht(struct lfht_head *lfht) {
 
 int lfht_init_thread(struct lfht_head *lfht)
 {
-#if LFHT_DEBUG
+#if LFHT_STATS
 	size_t stats_size = CACHE_SIZE * ((sizeof(struct lfht_stats) / CACHE_SIZE) + 1);
 	struct lfht_stats *s = (struct lfht_stats *) aligned_alloc(CACHE_SIZE, stats_size);
 	s->compression_counter = 0;
@@ -225,7 +225,7 @@ int lfht_init_thread(struct lfht_head *lfht)
 
 void lfht_end_thread(struct lfht_head *lfht, int thread_id)
 {
-#if LFHT_DEBUG
+#if LFHT_STATS
 	struct lfht_stats *s = lfht->stats[thread_id];
 	clock_gettime(CLOCK_MONOTONIC_RAW, &(s->term));
 #endif
@@ -236,7 +236,7 @@ void *lfht_search(
 		size_t hash,
 		int thread_id)
 {
-#if LFHT_DEBUG
+#if LFHT_STATS
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->api_calls++;
 	stats->searches++;
@@ -254,7 +254,7 @@ struct lfht_node *lfht_insert(
 		void *value,
 		int thread_id)
 {
-#if LFHT_DEBUG
+#if LFHT_STATS
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->api_calls++;
 	stats->inserts++;
@@ -272,7 +272,7 @@ void lfht_remove(
 		size_t hash,
 		int thread_id)
 {
-#if LFHT_DEBUG
+#if LFHT_STATS
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->api_calls++;
 	stats->removes++;
@@ -545,6 +545,9 @@ start: ;
 	assert(hnode);
 	assert(*hnode);
 	assert((*hnode)->type == HASH);
+#endif
+
+#if LFHT_STATS
 	struct lfht_stats* stats = lfht->stats[thread_id];
 #endif
 
@@ -565,7 +568,7 @@ start: ;
 
 	// traverse chain (tail points back to hash node)
 	while(iter != *hnode) {
-#if LFHT_DEBUG
+#if LFHT_STATS
 		stats->paths++;
 #endif
 
@@ -616,7 +619,7 @@ void make_unreachable(
 		struct lfht_node *cnode,
 		struct lfht_node *hnode)
 {
-#if LFHT_DEBUG
+#if LFHT_STATS
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->operations++;
 #endif
@@ -627,7 +630,9 @@ start: ;
 	assert(hnode);
 	assert(cnode->type == LEAF);
 	assert(hnode->type == HASH);
+#endif
 
+#if LFHT_STATS
 	stats->max_retry_counter++;
 #endif
 	struct lfht_node *iter;
@@ -691,7 +696,7 @@ start: ;
 	if(iter == cnode) {
 		// try to disconnect our target from chain
 #if LFHT_DEBUG
-		if (prev->type ==HASH && nxt->type == HASH) {
+		if (prev->type == HASH && nxt->type == HASH) {
 			assert(prev == nxt);
 		}
 #endif
@@ -742,13 +747,13 @@ struct lfht_node *search_insert(
 		size_t hash,
 		void *value)
 {
-#if LFHT_DEBUG
+#if LFHT_STATS
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->operations++;
 #endif
 
 start: ;
-#if LFHT_DEBUG
+#if LFHT_STATS
 	stats->max_retry_counter++;
 #endif
 
@@ -815,7 +820,7 @@ void compress(
 		struct lfht_node *target,
 		size_t hash)
 {
-#if LFHT_DEBUG
+#if LFHT_STATS
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->operations++;
 #endif
@@ -824,7 +829,9 @@ start: ;
 #if LFHT_DEBUG
 	assert(target);
 	assert(target->type == HASH);
+#endif
 
+#if LFHT_STATS
 	stats->max_retry_counter++;
 #endif
 
@@ -851,7 +858,7 @@ start: ;
 		free(freeze);
 		return;
 	}
-#if LFHT_DEBUG
+#if LFHT_STATS
 	stats->freeze_counter++;
 #endif
 
@@ -900,7 +907,7 @@ start: ;
 	}
 
 	// compressed level
-#if LFHT_DEBUG
+#if LFHT_STATS
 	stats->compression_counter++;
 #endif
 	// try to compress previous level
@@ -965,7 +972,7 @@ int unfreeze(
 		return 0;
 	}
 
-#if LFHT_DEBUG
+#if LFHT_STATS
 	struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
 	stats->unfreeze_counter++;
 #endif
@@ -1011,7 +1018,7 @@ void abort_compress(
 			atomic_bucket,
 			target,
 			memory_order_release);
-#if LFHT_DEBUG
+#if LFHT_STATS
 	struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
 	stats->compression_rollback_counter++;
 #endif
@@ -1052,7 +1059,7 @@ int expand(
 				hnode->hash.hash_pos,
 				hnode->hash.size);
 
-#if LFHT_DEBUG
+#if LFHT_STATS
 		struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
 		stats->expansion_counter++;
 		int level = (*new_hash)->hash.hash_pos / (*new_hash)->hash.size;
@@ -1127,7 +1134,7 @@ void adjust_node(
 		struct lfht_node *cnode,
 		struct lfht_node *hnode)
 {
-#if LFHT_DEBUG
+#if LFHT_STATS
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->operations++;
 #endif
@@ -1138,7 +1145,9 @@ start: ;
 	assert(hnode);
 	assert(cnode->type == LEAF);
 	assert(hnode->type == HASH);
+#endif
 
+#if LFHT_STATS
 	stats->max_retry_counter++;
 #endif
 	unsigned int count = 0;
@@ -1245,60 +1254,3 @@ void *search_node(
 	return NULL;
 }
 
-// debug functions
-
-#if LFHT_DEBUG
-
-void *lfht_debug_search(
-		struct lfht_head *lfht,
-		size_t hash,
-		int thread_id)
-{
-	return debug_search_hash(lfht->entry_hash, hash);
-}
-
-void *debug_search_hash(
-		struct lfht_node *hnode,
-		size_t hash)
-{
-	int pos = get_bucket_index(
-			hash,
-			hnode->hash.hash_pos,
-			hnode->hash.size);
-	struct lfht_node *next_node = atomic_load_explicit(
-			&(hnode->hash.array[pos]),
-			memory_order_seq_cst);
-	if(next_node == hnode)
-		return NULL;
-	else if(next_node->type == HASH)
-		return debug_search_hash(next_node, hash);
-	else
-		return debug_search_chain(next_node, hnode, hash);
-}
-
-void *debug_search_chain(
-		struct lfht_node *cnode,
-		struct lfht_node *hnode,
-		size_t hash)
-{
-	if(cnode->leaf.hash == hash) {
-		if(is_invalid(atomic_load_explicit(
-						&(cnode->leaf.next),
-						memory_order_seq_cst)))
-			fprintf(stderr, "Invalid node found: %p\n", cnode->leaf.value);
-		else
-			return cnode->leaf.value;
-	}
-	struct lfht_node *next_node = valid_ptr(atomic_load_explicit(
-				&(cnode->leaf.next),
-				memory_order_seq_cst));
-	if(next_node == hnode)
-		return NULL;
-	else if(next_node->type == LEAF)
-		return debug_search_chain(next_node, hnode, hash);
-	while(next_node->hash.prev != hnode)
-		next_node = next_node->hash.prev;
-	return debug_search_hash(next_node, hash);
-}
-
-#endif
