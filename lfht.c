@@ -118,26 +118,6 @@ unsigned is_compression_node(struct lfht_node *node);
 
 unsigned is_empty(struct lfht_node *hnode);
 
-// debug functions
-
-#if LFHT_STATS
-
-void *lfht_debug_search(
-		struct lfht_head *lfht,
-		size_t hash,
-		int thread_id);
-
-void *debug_search_chain(
-		struct lfht_node *cnode,
-		struct lfht_node *hnode,
-		size_t hash);
-
-void *debug_search_hash(
-		struct lfht_node *hnode,
-		size_t hash);
-
-#endif
-
 // public functions
 // defined by the header API
 
