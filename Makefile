@@ -1,8 +1,8 @@
 CFLAGS=-std=gnu11 -Wall -Wextra -I. -fPIC
 AR=ar
-OPT=-O3
+OPT=-O3 -DLFHT_STATS=1
 LFLAGS=-shared
-DEBUG=-g -ggdb -Og -DLFHT_DEBUG=1
+DEBUG=-g -ggdb -Og -DLFHT_DEBUG=1 -DLFHT_STATS=1
 
 default: liblfht.a
 debug: liblfht_debug.a liblfht_debug.so
