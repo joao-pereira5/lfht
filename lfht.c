@@ -546,7 +546,6 @@ start: ;
 	assert(*hnode);
 	assert((*hnode)->type == HASH);
 	struct lfht_stats* stats = lfht->stats[thread_id];
-	int hops = 0;
 #endif
 
 	_Atomic(struct lfht_node *) *atomic_head =
@@ -559,15 +558,6 @@ start: ;
 	struct lfht_node *head = iter;
 	*nodeptr = head;
 
-	if(is_compression_node(head)) {
-		// skip compression node
-		iter = valid_ptr(get_next(iter));
-#if LFHT_DEBUG
-		assert(iter);
-		assert(iter->type == HASH);
-#endif
-	}
-
 	if(last_valid_atomic) {
 		*last_valid_atomic = atomic_head;
 		*count = iter->type == LEAF ? 1 : 0;
@@ -575,6 +565,9 @@ start: ;
 
 	// traverse chain (tail points back to hash node)
 	while(iter != *hnode) {
+#if LFHT_DEBUG
+		stats->paths++;
+#endif
 
 		if(iter->type == HASH) {
 			// travel down a level and search for the node there
@@ -590,9 +583,7 @@ start: ;
 			goto start;
 		}
 #if LFHT_DEBUG
-		assert(!is_compression_node(head));
 		assert(iter->type == LEAF);
-		hops++;
 #endif
 
 		struct lfht_node *nxt_iter = get_next(iter);
@@ -602,11 +593,6 @@ start: ;
 			if(iter->leaf.hash == hash) {
 				// found node
 				*nodeptr = iter;
-#if LFHT_DEBUG
-				int pos = (*hnode)->hash.hash_pos;
-				stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
-				stats->paths += hops - 1;
-#endif
 				return 1;
 			}
 			*nodeptr = nxt_iter;
@@ -621,13 +607,6 @@ start: ;
 		iter = valid_ptr(nxt_iter);
 	}
 
-#if LFHT_DEBUG
-	int pos = (*hnode)->hash.hash_pos;
-	stats->paths += pos > 0 ? (pos / (*hnode)->hash.size) : pos;
-	if(hops > 0) {
-		stats->paths += hops - 1;
-	}
-#endif
 	return 0;
 }
 
