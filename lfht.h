@@ -27,6 +27,7 @@ struct lfht_stats {
 	int api_calls;
 	int max_depth;
 	unsigned long paths;
+	unsigned long lookups;
 	struct timespec term;
 };
 #endif
