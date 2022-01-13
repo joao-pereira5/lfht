@@ -59,6 +59,7 @@ void lfht_reset_stats(struct lfht_head *lfht, int tid) {
 	s->api_calls = 0;
 	s->max_depth = 0;
 	s->paths = 0;
+	s->lookups = 0;
 }
 #endif
 
