@@ -206,6 +206,7 @@ int lfht_init_thread(struct lfht_head *lfht)
 	s->api_calls = 0;
 	s->max_depth = 0;
 	s->paths = 0;
+	s->lookups = 0;
 
 	for(int i = 0; i < lfht->max_threads; i++) {
 		struct lfht_stats *expect = NULL;
@@ -620,15 +621,18 @@ int find_node(
 		_Atomic(struct lfht_node *) **last_valid_atomic,
 		unsigned int *count)
 {
+#if LFHT_DEBUG
+	struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
+	stats->lookups++;
+	stats->max_retry_counter++;
+#endif
+
 start: ;
 #if LFHT_DEBUG
 	assert(nodeptr);
 	assert(hnode);
 	assert(*hnode);
 	assert((*hnode)->type == HASH);
-
-	struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
-	stats->max_retry_counter++;
 #endif
 
 	_Atomic(struct lfht_node *) *atomic_head =
