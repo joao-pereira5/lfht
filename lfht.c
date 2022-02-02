@@ -826,7 +826,7 @@ start: ;
 #endif
 
 	// expand hash level
-	if(count >= max_chain_nodes) {
+	if(count >= lfht->max_chain_nodes) {
 		struct lfht_node *new_hash;
 		// add new level to tail of chain
 		if(expand(lfht, thread_id, &new_hash, hnode, hash, last_valid_atomic)) {
@@ -1258,7 +1258,7 @@ start: ;
 	}
 
 	// expansion required?
-	if(count >= max_chain_nodes) {
+	if(count >= lfht->max_chain_nodes) {
 		struct lfht_node *new_hash;
 		if(expand(lfht, thread_id, &new_hash, hnode, hash, current_valid)) {
 			// adjust node at new level
