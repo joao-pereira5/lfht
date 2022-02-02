@@ -41,7 +41,7 @@ struct lfht_head {
 	int max_threads;
 	int root_hash_size;
 	int hash_size;
-	int max_chain_nodes;
+	unsigned int max_chain_nodes;
 #if LFHT_STATS
 	_Atomic(struct lfht_stats*) *stats;
 #endif
