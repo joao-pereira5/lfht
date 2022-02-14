@@ -1094,6 +1094,31 @@ int expand(
 
 	// failed
 	free(*new_hash);
+
+	if(exp->type == HASH && exp != hnode) {
+		// recursive helping
+		*new_hash = exp;
+
+		int pos = get_bucket_index(
+				hash,
+				hnode->hash.hash_pos,
+				hnode->hash.size);
+
+		// move all nodes of chain to new level
+		_Atomic(struct lfht_node *) *atomic_bucket =
+			&(hnode->hash.array[pos]);
+
+		struct lfht_node *bucket = atomic_load_explicit(
+				atomic_bucket,
+				memory_order_consume);
+
+		if(bucket->type != LEAF) {
+			return 0;
+		}
+
+		adjust_chain_nodes(lfht, thread_id, bucket, *new_hash);
+		return 1;
+	}
 	return 0;
 }
 
