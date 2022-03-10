@@ -41,6 +41,7 @@ struct lfht_head {
 	int root_hash_size;
 	int hash_size;
 	unsigned int max_chain_nodes;
+	HpRecord** hazard_pointers;
 #if LFHT_STATS
 	_Atomic(struct lfht_stats*) *stats;
 #endif
@@ -79,7 +80,8 @@ struct lfht_head *init_lfht_explicit(
 void free_lfht(struct lfht_head *lfht);
 
 int lfht_init_thread(
-		struct lfht_head *head);
+		struct lfht_head *head,
+		int thread_id);
 
 void lfht_end_thread(
 		struct lfht_head *head,
@@ -90,7 +92,7 @@ void *lfht_search(
 		size_t hash,
 		int thread_id);
 
-struct lfht_node *lfht_insert(
+void lfht_insert(
 		struct lfht_head *head,
 		size_t hash,
 		void *value,
