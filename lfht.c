@@ -184,7 +184,9 @@ void free_lfht(struct lfht_head *lfht) {
 
 int lfht_init_thread(struct lfht_head *lfht, int thread_id)
 {
-	lfht->hazard_pointers[thread_id] = hp_alloc(dom, thread_id);
+	if(!lfht->hazard_pointers[thread_id]) {
+		lfht->hazard_pointers[thread_id] = hp_alloc(dom, thread_id);
+	}
 
 #if LFHT_STATS
 	size_t stats_size = CACHE_SIZE * ((sizeof(struct lfht_stats) / CACHE_SIZE) + 1);
@@ -549,6 +551,7 @@ int find_node(
 #endif
 
 	HpRecord* hp = lfht->hazard_pointers[thread_id];
+	_Atomic(struct lfht_node *) *lva;
 
 start: ;
 #if LFHT_DEBUG
@@ -560,6 +563,7 @@ start: ;
 
 	_Atomic(struct lfht_node *) *atomic_head =
 		get_atomic_bucket(hash, *hnode);
+	lva = atomic_head;
 
 	struct lfht_node *iter = atomic_load_explicit(
 			atomic_head,
@@ -598,7 +602,10 @@ start: ;
 	}
 
 	if(last_valid_atomic) {
-		*last_valid_atomic = atomic_head;
+		*last_valid_atomic = lva;
+	}
+
+	if(count) {
 		*count = iter->type == LEAF ? 1 : 0;
 	}
 
@@ -630,13 +637,6 @@ start: ;
 
 		struct lfht_node *nxt_iter = get_next(iter);
 
-		hp_set(dom, hp, iter, 2);
-		hp_set(dom, hp, nxt_iter, 3);
-		if(nxt_iter != get_next(iter)) {
-			// unsafe hazard pointer
-			goto start;
-		}
-
 		if(!is_invalid(nxt_iter)) {
 			// iter is a valid node
 
@@ -648,8 +648,12 @@ start: ;
 			}
 			*nodeptr = nxt_iter;
 
+			lva = &(iter->leaf.next);
 			if(last_valid_atomic) {
-				*last_valid_atomic = &(iter->leaf.next);
+				*last_valid_atomic = lva;
+			}
+
+			if(count) {
 				(*count)++;
 			}
 
@@ -657,9 +661,9 @@ start: ;
 			// iter is an invalid node, detach
 			struct lfht_node *expect = iter;
 			if(!atomic_compare_exchange_strong_explicit(
-						*last_valid_atomic,
+						lva,
 						&expect,
-						nxt_iter,
+						valid_ptr(nxt_iter),
 						memory_order_acq_rel,
 						memory_order_consume)) {
 				// failed to detach
@@ -667,10 +671,17 @@ start: ;
 			}
 
 			hp_retire(dom, thread_id, hp, iter);
-			if(nxt_iter == *hnode) {
+			if(valid_ptr(nxt_iter) == *hnode) {
 				// hnode automatically protected by this function
 				compress(lfht, thread_id, *hnode, iter->leaf.hash);
 			}
+		}
+
+		hp_set(dom, hp, iter, 2);
+		hp_set(dom, hp, nxt_iter, 3);
+		if(nxt_iter != get_next(iter)) {
+			// unsafe hazard pointer
+			goto start;
 		}
 
 		// advance chain
@@ -815,24 +826,8 @@ void search_remove(
 		return;
 	}
 
-	struct lfht_node *expect = cnode;
-	if(!atomic_compare_exchange_strong_explicit(
-				last_valid_atomic,
-				&expect,
-				nxt,
-				memory_order_acq_rel,
-				memory_order_consume)) {
-		// someone else has detached this node
-		hp_clear(dom, hp);
-		return;
-	}
-
-	hp_retire(dom, thread_id, hp, cnode);
-
-	if(nxt == hnode) {
-		compress(lfht, thread_id, hnode, cnode->leaf.hash);
-	}
-
+	// this will detach any invalid nodes
+	find_node(lfht, thread_id, hash, &hnode, &cnode, &nxt, &last_valid_atomic, NULL);
 	hp_clear(dom, hp);
 }
 
@@ -1411,4 +1406,15 @@ void *search_node(
 	}
 	return NULL;
 }
+
+#if HP_STATS
+#include <stdio.h>
+
+void print_hp_stats() {
+	HpStats* stats = hp_gather_stats();
+	printf("HP API calls: %d\n", stats->api_calls);
+	printf("HP reclaimed nodes: %d\n", stats->reclaimed);
+	printf("HP retired nodes: %d\n", stats->retired);
+}
+#endif
 

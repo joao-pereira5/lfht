@@ -109,3 +109,7 @@ void *lfht_debug_search(
 		struct lfht_head *head,
 		size_t hash,
 		int thread_id);
+
+#if HP_STATS
+void print_hp_stats();
+#endif
