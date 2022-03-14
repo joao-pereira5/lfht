@@ -78,6 +78,13 @@ void abort_compress(
 		struct lfht_node *head,
 		_Atomic(struct lfht_node *) *atomic_bucket);
 
+int help_expansion(
+		struct lfht_head *lfht,
+		int thread_id,
+		struct lfht_node *hnode,
+		struct lfht_node *target,
+		size_t hash);
+
 int expand(
 		struct lfht_head *lfht,
 		int thread_id,
@@ -86,7 +93,7 @@ int expand(
 		size_t hash,
 		_Atomic(struct lfht_node *) *tail_nxt_ptr);
 
-void adjust_chain_nodes(
+int adjust_chain_nodes(
 		struct lfht_head *lfht,
 		int thread_id,
 		struct lfht_node *hnode,
@@ -97,6 +104,7 @@ void adjust_node(
 		struct lfht_head *lfht,
 		int thread_id,
 		struct lfht_node *cnode,
+		struct lfht_node *nxt,
 		struct lfht_node *hnode);
 
 void *search_node(
@@ -684,8 +692,22 @@ start: ;
 			goto start;
 		}
 
+		struct lfht_node* vn = valid_ptr(nxt_iter);
+		if(iter != vn && iter->type == LEAF && vn->type == HASH && vn != *hnode) {
+			// protect new hash
+			hp_set(dom, hp, vn, 1);
+
+			// expansion detected
+			help_expansion(
+					lfht,
+					thread_id,
+					*hnode,
+					vn,
+					hash);
+		}
+
 		// advance chain
-		iter = valid_ptr(nxt_iter);
+		iter = vn;
 	}
 
 	return 0;
@@ -1150,6 +1172,69 @@ void abort_compress(
 
 // expansion functions
 
+int help_expansion(
+		struct lfht_head *lfht,
+		int thread_id,
+		struct lfht_node *hnode,
+		struct lfht_node *target,
+		size_t hash)
+{
+	if(target->type != HASH || target == hnode) {
+		return 0;
+	}
+
+	HpRecord* hp = lfht->hazard_pointers[thread_id];
+
+	// recursive helping
+	int pos = get_bucket_index(
+			hash,
+			hnode->hash.hash_pos,
+			hnode->hash.size);
+
+	// move all nodes of chain to new level
+	_Atomic(struct lfht_node *) *atomic_bucket =
+		&(hnode->hash.array[pos]);
+
+	struct lfht_node *bucket = atomic_load_explicit(
+			atomic_bucket,
+			memory_order_consume);
+
+	hp_set(dom, hp, bucket, 2);
+	if(bucket != atomic_load_explicit(
+			atomic_bucket,
+			memory_order_consume) || bucket->type != LEAF) {
+		// someone has already expanded...
+		return 0;
+	}
+
+	adjust_chain_nodes(
+			lfht,
+			thread_id,
+			target,
+			bucket,
+			3);
+
+	int res = atomic_compare_exchange_strong_explicit(
+			atomic_bucket,
+			&bucket,
+			target,
+			memory_order_acq_rel,
+			memory_order_consume);
+
+#if LFHT_STATS
+	if(res) {
+		struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
+		stats->expansion_counter++;
+		int level = target->hash.hash_pos / target->hash.size;
+		if(stats->max_depth < level) {
+			stats->max_depth = level;
+		}
+	}
+#endif
+
+	return res;
+}
+
 int expand(
 		struct lfht_head *lfht,
 		int thread_id,
@@ -1183,65 +1268,37 @@ int expand(
 				*new_hash,
 				memory_order_acq_rel,
 				memory_order_consume)) {
-		// level added
-		int pos = get_bucket_index(
-				hash,
-				hnode->hash.hash_pos,
-				hnode->hash.size);
-
-		// move all nodes of chain to new level
-		_Atomic(struct lfht_node *) *atomic_bucket =
-			&(hnode->hash.array[pos]);
-
-		struct lfht_node *head = atomic_load_explicit(
-				atomic_bucket,
-				memory_order_consume);
-
-		hp_set(dom, hp, head, 2);
-		if(head != atomic_load_explicit(
-				atomic_bucket,
-				memory_order_consume)) {
-			// someone has already expanded...
-			return 0;
-		}
-
-		adjust_chain_nodes(
+		return help_expansion(
 				lfht,
 				thread_id,
+				hnode,
 				*new_hash,
-				head,
-				3);
-
-		// store() might interfere with freeze()
-		// checking if bucket's head is still our
-		// first observed node
-		if(!atomic_compare_exchange_strong_explicit(
-				atomic_bucket,
-				&head,
-				*new_hash,
-				memory_order_acq_rel,
-				memory_order_consume)) {
-			// someone else has expanded
-			return 0;
-		}
-
-#if LFHT_STATS
-		struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
-		stats->expansion_counter++;
-		int level = (*new_hash)->hash.hash_pos / (*new_hash)->hash.size;
-		if(stats->max_depth < level) {
-			stats->max_depth = level;
-		}
-#endif
-		return 1;
+				hash);
 	}
 
 	// failed
 	free(*new_hash);
-	return 0;
+	
+	hp_set(dom, hp, exp, 1);
+	struct lfht_node* tail = atomic_load_explicit(
+			tail_nxt_ptr,
+			memory_order_consume);
+
+	if(tail != exp || exp->type != HASH || exp == hnode) {
+		return 0;
+	}
+
+	*new_hash = exp;
+
+	return help_expansion(
+			lfht,
+			thread_id,
+			hnode,
+			exp,
+			hash);
 }
 
-void adjust_chain_nodes(
+int adjust_chain_nodes(
 		struct lfht_head *lfht,
 		int thread_id,
 		struct lfht_node *hnode,
@@ -1256,7 +1313,7 @@ void adjust_chain_nodes(
 
 	if(head->type != LEAF) {
 		// reached tail
-		return;
+		return head == hnode;
 	}
 
 start: ;
@@ -1270,25 +1327,30 @@ start: ;
 		goto start;
 	}
 
-	adjust_chain_nodes(
+	if(!adjust_chain_nodes(
 			lfht,
 			thread_id,
 			hnode,
 			nxt,
-			i+1);
+			i+1)) {
+		// not the hash we wished to expand
+		return 0;
+	}
 
 	if(is_invalid(nxt_iter)) {
-		return;
+		return 1;
 	}
 
 	// iter is a valid node
-	adjust_node(lfht, thread_id, head, hnode);
+	adjust_node(lfht, thread_id, head, nxt_iter, hnode);
+	return 1;
 }
 
 void adjust_node(
 		struct lfht_head *lfht,
 		int thread_id,
 		struct lfht_node *cnode,
+		struct lfht_node *nxt,
 		struct lfht_node *hnode)
 {
 #if LFHT_STATS
@@ -1339,6 +1401,11 @@ start: ;
 			iter = valid_ptr(nxt_ptr);
 			continue;
 		}
+		
+		if(cnode == iter) {
+			// already inserted
+			return;
+		}
 
 		current_valid = &(iter->leaf.next);
 		expect = valid_ptr(nxt_ptr);
@@ -1359,8 +1426,12 @@ start: ;
 	}
 
 	// point node to newer level
-	if(!force_cas(cnode, hnode)) {
-		// node invalidated in the meantime
+	if(!atomic_compare_exchange_strong_explicit(
+				&(cnode->leaf.next),
+				&nxt,
+				hnode,
+				memory_order_acq_rel,
+				memory_order_consume)) {
 		return;
 	}
 
