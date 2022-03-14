@@ -1483,9 +1483,9 @@ void *search_node(
 
 void print_hp_stats() {
 	HpStats* stats = hp_gather_stats();
-	printf("HP API calls: %d\n", stats->api_calls);
-	printf("HP reclaimed nodes: %d\n", stats->reclaimed);
-	printf("HP retired nodes: %d\n", stats->retired);
+	printf("HP API calls: %lu\n", stats->api_calls);
+	printf("HP reclaimed nodes: %lu\n", stats->reclaimed);
+	printf("HP retired nodes: %lu\n", stats->retired);
 }
 #endif
 
