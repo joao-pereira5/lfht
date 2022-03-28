@@ -150,7 +150,9 @@ struct lfht_head *init_lfht_explicit(
 	struct lfht_head *lfht = malloc(sizeof(struct lfht_head));
 
 	int k = max_chain_nodes + 3;
-	dom = hp_create(k, max_threads * k);
+	dom = hp_create(k, 10000);
+	//dom = hp_create(k, max_threads * k + max_threads * k / 2);
+	//dom = hp_create(k, 0);
 
 	lfht->entry_hash = create_hash_node(root_hash_size, 0, NULL);
 	lfht->max_threads = max_threads;
@@ -577,7 +579,7 @@ start: ;
 			atomic_head,
 			memory_order_consume);
 
-	hp_set(dom, hp, iter, 2);
+	hp_protect(dom, hp, iter);
 	if(iter != atomic_load_explicit(
 				atomic_head,
 				memory_order_consume)) {
@@ -593,11 +595,9 @@ start: ;
 		// skip compression node
 		struct lfht_node *nxt = valid_ptr(get_next(iter));
 
-		hp_set(dom, hp, iter, 2);
-		hp_set(dom, hp, nxt, 3);
+		hp_protect(dom, hp, nxt);
 		// is hazard pointer safe?
 		if(valid_ptr(get_next(iter)) != nxt) {
-			hp_clear(dom, hp);
 			goto start;
 		}
 
@@ -625,17 +625,7 @@ start: ;
 
 		if(iter->type == HASH) {
 			// travel down a level and search for the node there
-			struct lfht_node* prev = *hnode;
 			*hnode = iter;
-
-			// for expansion/compression purposes
-			// protect current and last hashes
-			hp_set(dom, hp, *hnode, 0);
-
-			// already checked either from .next check
-			// or check bucket at start;
-			hp_set(dom, hp, prev, 1);
-
 			goto start;
 		}
 #if LFHT_DEBUG
@@ -675,6 +665,7 @@ start: ;
 						memory_order_acq_rel,
 						memory_order_consume)) {
 				// failed to detach
+				//*hnode = lfht->entry_hash;
 				goto start;
 			}
 
@@ -682,21 +673,19 @@ start: ;
 			if(valid_ptr(nxt_iter) == *hnode) {
 				// hnode automatically protected by this function
 				compress(lfht, thread_id, *hnode, iter->leaf.hash);
+				*hnode = lfht->entry_hash;
 			}
-		}
-
-		hp_set(dom, hp, iter, 2);
-		hp_set(dom, hp, nxt_iter, 3);
-		if(nxt_iter != get_next(iter)) {
-			// unsafe hazard pointer
 			goto start;
 		}
 
 		struct lfht_node* vn = valid_ptr(nxt_iter);
-		if(iter != vn && iter->type == LEAF && vn->type == HASH && vn != *hnode) {
-			// protect new hash
-			hp_set(dom, hp, vn, 1);
+		hp_protect(dom, hp, vn);
+		if(vn != get_next(iter)) {
+			// unsafe hazard pointer
+			goto start;
+		}
 
+		if(iter != vn && iter->type == LEAF && vn->type == HASH && vn != *hnode) {
 			// expansion detected
 			help_expansion(
 					lfht,
@@ -1073,6 +1062,7 @@ int unfreeze(
 	// head is freeze node
 
 	struct lfht_node *unfreeze = create_unfreeze_node(target);
+	hp_protect(dom, hp, unfreeze);
 
 	// try to place unfreeze node in front of bucket,
 	// pointing to freeze node
@@ -1147,22 +1137,15 @@ void abort_compress(
 	}
 
 	// commit level by removing compression bridge node
-	while(!atomic_compare_exchange_strong_explicit(
+	if(atomic_compare_exchange_strong_explicit(
 			atomic_bucket,
 			&head,
 			target,
 			memory_order_acq_rel,
 			memory_order_consume)) {
-		if(!is_compression_node(head)) {
-			// someone else has already committed
-			return;
-		}
-		// someone has called unfroze()
-		// retry commit
+		// retire compression node
+		hp_retire(dom, thread_id, hp, head);
 	}
-
-	// retire compression node
-	hp_retire(dom, thread_id, hp, head);
 
 #if LFHT_STATS
 	struct lfht_stats* stats = atomic_load_explicit(&(lfht->stats[thread_id]), memory_order_relaxed);
@@ -1199,7 +1182,7 @@ int help_expansion(
 			atomic_bucket,
 			memory_order_consume);
 
-	hp_set(dom, hp, bucket, 2);
+	hp_protect(dom, hp, bucket);
 	if(bucket != atomic_load_explicit(
 			atomic_bucket,
 			memory_order_consume) || bucket->type != LEAF) {
@@ -1256,10 +1239,7 @@ int expand(
 			hnode->hash.hash_pos + hnode->hash.size,
 			hnode);
 
-	// protected in find_node
-	// setting it to lower indexes of HPs[]
-	hp_set(dom, hp, hnode, 0);
-	hp_set(dom, hp, *new_hash, 1);
+	hp_protect(dom, hp, *new_hash);
 
 	// add new hash level to tail of chain
 	if(atomic_compare_exchange_strong_explicit(
@@ -1279,7 +1259,7 @@ int expand(
 	// failed
 	free(*new_hash);
 	
-	hp_set(dom, hp, exp, 1);
+	hp_protect(dom, hp, exp);
 	struct lfht_node* tail = atomic_load_explicit(
 			tail_nxt_ptr,
 			memory_order_consume);
@@ -1321,7 +1301,7 @@ start: ;
 	struct lfht_node *nxt_iter = get_next(head);
 	struct lfht_node *nxt = valid_ptr(nxt_iter);
 
-	hp_set(dom, hp, nxt, i);
+	hp_protect(dom, hp, nxt);
 	if(nxt_iter != get_next(head)) {
 		// unsafe hazard pointer
 		goto start;
