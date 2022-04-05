@@ -828,18 +828,18 @@ void search_remove(
 	struct lfht_node *cnode;
 	struct lfht_node *nxt;
 	if(!find_node(lfht, thread_id, hash, &hnode, &cnode, &nxt, &last_valid_atomic, NULL)) {
-		hp_clear(dom, hp);
+		//hp_clear(dom, hp);
 		return;
 	}
 
 	if(!mark_invalid(cnode)) {
-		hp_clear(dom, hp);
+		//hp_clear(dom, hp);
 		return;
 	}
 
 	// this will detach any invalid nodes
 	find_node(lfht, thread_id, hash, &hnode, &cnode, &nxt, &last_valid_atomic, NULL);
-	hp_clear(dom, hp);
+	//hp_clear(dom, hp);
 }
 
 // insertion functions
@@ -869,7 +869,7 @@ start: ;
 
 	if(find_node(lfht, thread_id, hash, &hnode, &cnode, &nxt, &last_valid_atomic, &count)) {
 		// node already inserted
-		hp_clear(dom, hp);
+		//hp_clear(dom, hp);
 		return;
 	}
 
@@ -910,7 +910,7 @@ start: ;
 				new_node,
 				memory_order_acq_rel,
 				memory_order_consume)) {
-		hp_clear(dom, hp);
+		//hp_clear(dom, hp);
 		return;
 	}
 
@@ -1450,7 +1450,7 @@ void *search_node(
 	int found = find_node(lfht, thread_id, hash, &hnode, &cnode, &nxt, NULL, NULL);
 	void* result = cnode->leaf.value;
 
-	hp_clear(dom, hp);
+	//hp_clear(dom, hp);
 
 	if(found) {
 		return result;
