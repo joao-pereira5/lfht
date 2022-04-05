@@ -12,6 +12,7 @@
 #define ROOT_HASH_SIZE 16
 #define HASH_SIZE 4
 #define CACHE_SIZE 64
+#define HP_THRESHOLD 1000
 
 #if LFHT_STATS
 #include <time.h>
@@ -74,7 +75,8 @@ struct lfht_head *init_lfht_explicit(
 		int max_threads,
 		int root_hash_size,
 		int hash_size,
-		int max_chain_nodes);
+		int max_chain_nodes,
+		int reclam_threshold);
 
 // not thread safe
 void free_lfht(struct lfht_head *lfht);

@@ -139,18 +139,20 @@ struct lfht_head *init_lfht(int max_threads) {
 			max_threads,
 			ROOT_HASH_SIZE,
 			HASH_SIZE,
-			MAX_NODES);
+			MAX_NODES,
+			HP_THRESHOLD);
 }
 
 struct lfht_head *init_lfht_explicit(
 		int max_threads,
 		int root_hash_size,
 		int hash_size,
-		int max_chain_nodes) {
+		int max_chain_nodes,
+		int reclamation_threshold) {
 	struct lfht_head *lfht = malloc(sizeof(struct lfht_head));
 
 	int k = max_chain_nodes + 3;
-	dom = hp_create(k, 10000);
+	dom = hp_create(k, reclamation_threshold);
 	//dom = hp_create(k, max_threads * k + max_threads * k / 2);
 	//dom = hp_create(k, 0);
 
