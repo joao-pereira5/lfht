@@ -52,10 +52,10 @@ void search_insert(
 		size_t hash,
 		void *value);
 
-void compress(
+int compress(
 		struct lfht_head *lfht,
 		int thread_id,
-		struct lfht_node *target,
+		struct lfht_node **target,
 		size_t hash);
 
 int unfreeze(
@@ -116,6 +116,8 @@ struct lfht_node *get_next(
 		struct lfht_node *node);
 
 struct lfht_node *get_prev(
+		struct lfht_head *lfht,
+		int thread_id,
 		struct lfht_node *node);
 
 struct lfht_node *valid_ptr(struct lfht_node *next);
@@ -515,7 +517,7 @@ int force_cas(struct lfht_node *node, struct lfht_node *replace)
 //   count -> length of the collision chain
 //
 // returns: 0/1 success
-int find_node(
+int lookup(
 		struct lfht_head *lfht,
 		int thread_id,
 		size_t hash,
@@ -580,7 +582,8 @@ traversal: ;
 		}
 
 		*hnode = nxt;
-		goto traversal;
+		compress(lfht, thread_id, hnode, hash);
+		goto start;
 	}
 
 	if(tail) {
@@ -627,6 +630,8 @@ traversal: ;
 			// check if we should compress
 
 			if(prev == bucket && nxt == *hnode) {
+				hp_protect(dom, hp, *hnode);
+
 				// bucket was left empty
 				if(compress(lfht, thread_id, hnode, hash)) {
 					goto start;
@@ -695,9 +700,9 @@ void search_remove(
 
 start: ;
 	// start from root
-	// both nodes protected by HPs from the find_node function
+	// both nodes protected by HPs from the lookup function
 	struct lfht_node *cnode;
-	if(!find_node(lfht, thread_id, hash, &hnode, &cnode, NULL, NULL)) {
+	if(!lookup(lfht, thread_id, hash, &hnode, &cnode, NULL, NULL)) {
 		return;
 	}
 
@@ -738,7 +743,7 @@ start: ;
 	}
 
 	// this will detach any invalid nodes
-	find_node(lfht, thread_id, hash, &hnode, &cnode, NULL, NULL);
+	lookup(lfht, thread_id, hash, &hnode, &cnode, NULL, NULL);
 }
 
 // insertion functions
@@ -765,13 +770,14 @@ start: ;
 	 _Atomic(struct lfht_node*) *tail;
 	unsigned int count;
 
-	if(find_node(lfht, thread_id, hash, &hnode, &cnode, &tail, &count)) {
+	if(lookup(lfht, thread_id, hash, &hnode, &cnode, &tail, &count)) {
 		// node already inserted
 		return;
 	}
 
-	if(cnode->type == FREEZE &&
-			!unfreeze(lfht, thread_id, hnode, hash)) {
+	//if(cnode->type == FREEZE &&
+	//		!unfreeze(lfht, thread_id, hnode, hash)) {
+	if(cnode->type == FREEZE) {
 		goto start;
 	}
 
@@ -807,10 +813,10 @@ start: ;
 
 // compression functions
 
-void compress(
+int compress(
 		struct lfht_head *lfht,
 		int thread_id,
-		struct lfht_node *target,
+		struct lfht_node **hnode,
 		size_t hash)
 {
 	HpRecord* hp = lfht->hazard_pointers[thread_id];
@@ -826,14 +832,23 @@ start: ;
 	stats->max_retry_counter++;
 #endif
 
-	if(target->hash.prev == NULL || !is_empty(target)) {
+	struct lfht_node *target = *hnode;
+
+	struct lfht_node *prev_hash = atomic_load_explicit(
+			&(target->hash.prev),
+			memory_order_consume);
+
+	if(prev_hash == NULL || !is_empty(target)) {
 		// we cannot compress the root hash or a non empty hash
-		return;
+		return 0;
 	}
 
 	struct lfht_node *freeze = create_freeze_node(target);
 	struct lfht_node *expect;
-	struct lfht_node *prev_hash = target->hash.prev; // these two are protected by find_node()
+
+	// get_prev() tries to protect the previous hash node
+	prev_hash = get_prev(lfht, thread_id, target);
+
 	_Atomic(struct lfht_node *) *atomic_bucket =
 		get_atomic_bucket(hash, prev_hash);
 
@@ -848,8 +863,15 @@ start: ;
 				memory_order_consume)) {
 		free(freeze);
 
+		hp_protect(dom, hp, expect);
+		if(expect != atomic_load_explicit(
+					atomic_bucket,
+					memory_order_consume)) {
+			goto start;
+		}
+
 		if(!is_compression_node(expect)) {
-			return;
+			return 1;
 		}
 
 		// aid compression
@@ -872,38 +894,43 @@ start: ;
 					&expect,
 					freeze,
 					memory_order_acq_rel,
-					memory_order_consume)) {
+					memory_order_consume) && expect != freeze) {
 			// bucket not empty
 			abort_compress(lfht, thread_id, target, freeze, freeze, atomic_bucket);
 			goto start;
 		}
 	}
 
+	// point prev field to root hash node
+	// this guarantees the safety of protecting the parent hash node
+	// from this point onward, the parent hash node cannot be protected from the prev field
+	// but at least this thread has already protected the parent
+	atomic_store_explicit(
+			&(target->hash.prev),
+			lfht->entry_hash,
+			memory_order_seq_cst);
+
 	// removing hash from the trie (commit)
 	expect = freeze;
-	if(!atomic_compare_exchange_strong_explicit(
+	if(atomic_compare_exchange_strong_explicit(
 				atomic_bucket,
 				&expect,
 				prev_hash,
 				memory_order_acq_rel,
 				memory_order_consume)) {
-		if(expect->type == UNFREEZE) {
-			abort_compress(lfht, thread_id, target, freeze, expect, atomic_bucket);
-		}
-		goto start;
+		// this thread was the one to commit compression
+		// it is responsible for freeing memory
+		hp_retire(dom, thread_id, hp, freeze);
+		hp_retire(dom, thread_id, hp, target);
+
+#if LFHT_STATS
+		// compressed level
+		stats->compression_counter++;
+#endif
 	}
 
-	// this thread was the one to commit compression
-	// it is responsible for freeing memory
-	hp_retire(dom, thread_id, hp, freeze);
-	hp_retire(dom, thread_id, hp, target);
-
-	// compressed level
-#if LFHT_STATS
-	stats->compression_counter++;
-#endif
 	// try to compress previous level
-	target = target->hash.prev;
+	*hnode = prev_hash;
 	goto start;
 }
 
@@ -1276,7 +1303,8 @@ start: ;
 				memory_order_consume)) {
 		if(is_invalid(get_next(cnode))) {
 			// node invalidated while it was being adjusted
-			make_unreachable(lfht, thread_id, cnode, hnode);
+			// TODO: tho this is not possible when guarding
+			//make_unreachable(lfht, thread_id, cnode, hnode);
 		}
 		return;
 	}
@@ -1294,7 +1322,7 @@ void *search_node(
 {
 	struct lfht_node *cnode;
 	HpRecord* hp = lfht->hazard_pointers[thread_id];
-	int found = find_node(lfht, thread_id, hash, &hnode, &cnode, NULL, NULL);
+	int found = lookup(lfht, thread_id, hash, &hnode, &cnode, NULL, NULL);
 	void* result = cnode->leaf.value;
 
 	if(found) {
