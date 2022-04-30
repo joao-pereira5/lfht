@@ -91,8 +91,7 @@ int adjust_chain_nodes(
 		struct lfht_head *lfht,
 		int thread_id,
 		struct lfht_node *hnode,
-		struct lfht_node *head,
-		int i);
+		struct lfht_node *head);
 
 void adjust_node(
 		struct lfht_head *lfht,
@@ -127,6 +126,8 @@ struct lfht_node *invalid_ptr(struct lfht_node *next);
 unsigned is_invalid(struct lfht_node *ptr);
 
 unsigned is_compression_node(struct lfht_node *node);
+
+unsigned is_compressed(struct lfht_node *node);
 
 unsigned is_empty(struct lfht_node *hnode);
 
@@ -407,8 +408,8 @@ struct lfht_node *get_prev(
 			&(hnode->hash.prev),
 			memory_order_seq_cst);
 
-	if(prev == lfht->entry_hash) {
-		return prev;
+	if(!prev) {
+		return lfht->entry_hash;
 	}
 
 	HpRecord* hp = lfht->hazard_pointers[thread_id];
@@ -455,6 +456,18 @@ struct lfht_node *invalid_ptr(struct lfht_node *next)
 unsigned is_invalid(struct lfht_node *ptr)
 {
 	return (uintptr_t) ptr & 1;
+}
+
+unsigned is_compressed(struct lfht_node *hnode)
+{
+	_Atomic(struct lfht_node *) *prev =
+		&(hnode->hash.prev);
+
+	struct lfht_node *parent = atomic_load_explicit(
+			prev,
+			memory_order_consume);
+
+	return !parent;
 }
 
 unsigned is_compression_node(struct lfht_node *node)
@@ -901,13 +914,11 @@ start: ;
 		}
 	}
 
-	// point prev field to root hash node
-	// this guarantees the safety of protecting the parent hash node
-	// from this point onward, the parent hash node cannot be protected from the prev field
-	// but at least this thread has already protected the parent
+	// this prevents the parent hash node from being referenced
+	// after it has been reclaimed
 	atomic_store_explicit(
 			&(target->hash.prev),
-			lfht->entry_hash,
+			NULL,
 			memory_order_seq_cst);
 
 	// removing hash from the trie (commit)
@@ -1072,18 +1083,20 @@ int help_expansion(
 			hnode->hash.size);
 
 	// move all nodes of chain to new level
-	_Atomic(struct lfht_node *) *atomic_bucket =
+	_Atomic(struct lfht_node *) *parent_bucket =
 		&(hnode->hash.array[pos]);
 
-	struct lfht_node *bucket = atomic_load_explicit(
-			atomic_bucket,
+	struct lfht_node *head = atomic_load_explicit(
+			parent_bucket,
 			memory_order_consume);
 
-	hp_protect(dom, hp, bucket);
-	if(bucket != atomic_load_explicit(
-			atomic_bucket,
-			memory_order_consume) || bucket->type != LEAF) {
-		// someone has already expanded...
+	// check if expansion has terminated
+	if(head == target) {
+		return 1;
+	}
+
+	// check if new hash node has been compressed
+	if(is_compressed(target)) {
 		return 0;
 	}
 
@@ -1091,12 +1104,11 @@ int help_expansion(
 			lfht,
 			thread_id,
 			target,
-			bucket,
-			3);
+			head);
 
 	int res = atomic_compare_exchange_strong_explicit(
-			atomic_bucket,
-			&bucket,
+			parent_bucket,
+			&head,
 			target,
 			memory_order_acq_rel,
 			memory_order_consume);
@@ -1151,7 +1163,8 @@ int expand(
 
 	// failed
 	free(*new_hash);
-	
+
+	// protect new hash node
 	hp_protect(dom, hp, exp);
 	struct lfht_node* tail = atomic_load_explicit(
 			tail_nxt_ptr,
@@ -1175,43 +1188,34 @@ int adjust_chain_nodes(
 		struct lfht_head *lfht,
 		int thread_id,
 		struct lfht_node *hnode,
-		struct lfht_node *head,
-		int i)
+		struct lfht_node *iter)
 {
 	HpRecord* hp = lfht->hazard_pointers[thread_id];
 
-	if(head->type != LEAF) {
+	if(iter->type != LEAF) {
 		// reached tail
-		return head == hnode;
+		return iter == hnode;
 	}
 
-start: ;
-
-	struct lfht_node *nxt_iter = get_next(head);
+	struct lfht_node *nxt_iter = get_next(iter);
 	struct lfht_node *nxt = valid_ptr(nxt_iter);
-
-	hp_protect(dom, hp, nxt);
-	if(nxt_iter != get_next(head)) {
-		// unsafe hazard pointer
-		goto start;
-	}
 
 	if(!adjust_chain_nodes(
 			lfht,
 			thread_id,
 			hnode,
-			nxt,
-			i+1)) {
+			nxt)) {
 		// not the hash we wished to expand
 		return 0;
 	}
 
 	if(is_invalid(nxt_iter)) {
+		// skip invalid nodes
 		return 1;
 	}
 
-	// iter is a valid node
-	adjust_node(lfht, thread_id, head, nxt_iter, hnode);
+	// iter is valid
+	adjust_node(lfht, thread_id, iter, nxt_iter, hnode);
 	return 1;
 }
 
@@ -1232,24 +1236,18 @@ start: ;
 #if LFHT_STATS
 	stats->max_retry_counter++;
 #endif
+
 	unsigned int count = 0;
 	size_t hash = cnode->leaf.hash;
+
 	_Atomic(struct lfht_node *) *current_valid =
 		get_atomic_bucket(hash, hnode);
+
 	struct lfht_node *expect = valid_ptr(atomic_load_explicit(
 				current_valid,
 				memory_order_consume));
+
 	struct lfht_node *iter = expect;
-
-	if(is_compression_node(iter)) {
-		if(!unfreeze(lfht, thread_id, hnode, hash)) {
-			// level already removed
-			return;
-		}
-
-		// skip compression node
-		iter = valid_ptr(get_next(iter));
-	}
 
 	// find tail of target bucket on new hash level
 	while(iter->type == LEAF) {
@@ -1260,7 +1258,7 @@ start: ;
 			iter = valid_ptr(nxt_ptr);
 			continue;
 		}
-		
+
 		if(cnode == iter) {
 			// already inserted
 			return;
@@ -1273,13 +1271,6 @@ start: ;
 	}
 
 	if(iter != hnode) {
-		// important loop!
-		// during adjust (after force_cas)
-		// there is a window when nodes may skip a level
-		while(iter->hash.prev != hnode) {
-			iter = iter->hash.prev;
-		}
-
 		hnode = iter;
 		goto start;
 	}
@@ -1295,21 +1286,15 @@ start: ;
 	}
 
 	// inserting node in chain of the newer level
-	if(atomic_compare_exchange_strong_explicit(
+	if(!atomic_compare_exchange_strong_explicit(
 				current_valid,
 				&expect,
 				cnode,
 				memory_order_acq_rel,
 				memory_order_consume)) {
-		if(is_invalid(get_next(cnode))) {
-			// node invalidated while it was being adjusted
-			// TODO: tho this is not possible when guarding
-			//make_unreachable(lfht, thread_id, cnode, hnode);
-		}
-		return;
+		// insertion failed
+		goto start;
 	}
-	// insertion failed
-	goto start;
 }
 
 // searching functions
