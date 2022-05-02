@@ -542,6 +542,7 @@ int lookup(
 #if LFHT_STATS
 	struct lfht_stats* stats = lfht->stats[thread_id];
 	stats->lookups++;
+	stats->operations++;
 #endif
 
 	HpRecord* hp = lfht->hazard_pointers[thread_id];
@@ -553,6 +554,10 @@ start: ;
 	if (*hnode != lfht->entry_hash) {
 		hp_protect(dom, hp, *hnode);
 	}
+
+#if LFHT_STATS
+	stats->max_retry_counter++;
+#endif
 
 traversal: ;
 
@@ -1281,7 +1286,7 @@ start: ;
 				&nxt,
 				hnode,
 				memory_order_acq_rel,
-				memory_order_consume)) {
+				memory_order_consume) && is_invalid()) {
 		return;
 	}
 
